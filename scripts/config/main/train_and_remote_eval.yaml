@@ -1,0 +1,49 @@
+defaults:
+  - default
+  - _self_
+
+save_path: '<path/to/store/trained/checkpoint>' # path to save the trained agent
+run_name: 'digiq-webshop'
+task_set: "webshop" # "general" or "webshop"
+
+# training
+train_algorithm: "digiq" # only "digiq" supported
+task_mode: "train_and_remote_eval"
+offline_data_path: "/data/user_data/<username>/autoui-zeroshot-trajectories/webshop-1296trajs.pt"
+
+# eval (effective only if you use train_and_eval.yaml)
+temperature: 0.8
+
+# critic training
+offline_critic_iterations: 40
+epochs: 20
+critic_lr: 1e-5
+detach_model: False
+critc_use_original_action_to_backup: True # whether use initial action for backing up Q function
+advantage_estimation: "bellman"
+learn_metric: "regression"
+
+# actor training
+lm_lr: 1e-4
+offline_actor_iterations: 30
+actor_epochs: 30
+actor_always_include_original_action: True
+actor_loss_type: "best-of-n" # "best-of-n" or "pg" or "awr"
+num_action_resampling: 16
+pg_multiplier: 5
+awr_beta: 0.01
+
+# data
+batch_size: 32
+grad_accum_steps: 4
+api_endpoints:
+
+worker_ips: ["<eval_machine_ip_address>"]
+
+worker_temp_path: "/home/<username_eval_machine>/logs/worker" # MUST BE identical to save_path on the worker machine
+worker_run_path: "/home/<username_eval_machine>/digiq/scripts" # where the script dir is on the worker machine
+worker_username: <username_eval_machine>
+
+train_iterations: 0
+eval_iterations: 6
+save_freq: 3

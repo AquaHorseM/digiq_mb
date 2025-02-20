@@ -1,0 +1,38 @@
+defaults:
+  - default
+  - _self_
+
+save_path: '<path/to/store/trained/checkpoint>'
+run_name: 'digiq-general'
+num_action_resampling: 16
+use_initial_action: True # whether use initial action for backing up Q function
+
+# training
+train_algorithm: "digiq" # only "digiq" supported
+task_mode: "train_and_eval"
+offline_data_path: "/home/<username>/autoui-zeroshot-trajectories/webshop-1296trajs.pt"
+# -----
+offline_critic_iterations: 40
+epochs: 20
+# -----
+offline_actor_iterations: 30
+actor_epochs: 30
+# -----
+temperature: 1.2
+
+advantage_estimation: "bellman"
+learn_metric: "regression"
+
+batch_size: 32 # batch size should be as large as number of api endpoints
+grad_accum_steps: 4
+api_endpoints:
+
+# configs below will NOT be effective
+worker_ips: ["<eval_machine_ip_address>"]
+worker_temp_path: "/home/<username_eval_machine>/logs/worker" # MUST BE identical to save_path on the worker machine
+worker_run_path: "/home/<username_eval_machine>/digiq/scripts" # where the script dir is on the worker machine
+worker_username: <username_eval_machine>
+
+train_iterations: 0
+eval_iterations: 6
+save_freq: 3

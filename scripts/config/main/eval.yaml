@@ -1,0 +1,45 @@
+defaults:
+  - default
+  - _self_
+
+save_path: '/home/<username>/aitw-webshop-digiq-agent'
+run_name: 'evaluate-digiq-webshop'
+task_set: "webshop" # "general" or "webshop"
+train_algorithm: "digiq" # only "digiq" supported
+task_mode: "eval"
+
+# critic arch (don't change it unless you trained your model with a different spec)
+advantage_estimation: "bellman"
+learn_metric: "regression"
+
+# not used in eval, DO NOT CHANGE
+critc_use_original_action_to_backup: True # whether use initial action for backing up Q function
+offline_data_path: ""
+critic_lr: 1e-5
+detach_model: False
+offline_critic_iterations: 40
+epochs: 20
+lm_lr: 1e-5
+offline_actor_iterations: 30
+actor_epochs: 30
+temperature: 0.8
+actor_always_include_original_action: True
+actor_loss_type: "best-of-n"
+num_action_resampling: 16
+pg_multiplier: 5
+awr_beta: 0.01
+
+# data
+batch_size: 32 # batch size should be as large as number of api endpoints
+grad_accum_steps: 4
+api_endpoints:
+
+worker_ips: [""]
+
+worker_temp_path: "" # MUST BE identical to save_path on the worker machine
+worker_run_path: "" # where the script dir is on the worker machine
+worker_username: ""
+
+train_iterations: 0
+eval_iterations: 6
+save_freq: 3

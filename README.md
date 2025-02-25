@@ -7,7 +7,7 @@ Digi-Q: Learning VLM Q-Value Functions for Training Device-Control Agents
 </h3>
 
 <p align="center">
-| <a href="https://digirl-agent.github.io/DigiQ-agent.github.io/"><b>Website | Demo | Results</b></a> | <a href="https://digirl-agent.github.io/DigiQ-agent.github.io/website/data/digiq.pdf"><b>Paper</b></a> | <a href="https://huggingface.co/collections/JackBAI/digi-q-67a8b0f83a24e14cbfd1fbc6"><b>Checkpoints | Data</b></a> |
+| <a href="https://digirl-agent.github.io/DigiQ-agent.github.io/"><b>Website | Demo | Results</b></a> | <a href="https://arxiv.org/abs/2502.15760"><b>Paper</b></a> | <a href="https://huggingface.co/collections/JackBAI/digi-q-67a8b0f83a24e14cbfd1fbc6"><b>Checkpoints | Data</b></a> |
 </p>
 
 ---

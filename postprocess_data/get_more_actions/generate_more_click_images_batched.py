@@ -102,6 +102,10 @@ merged_trajs = []
 for result in results:
     merged_trajs.extend(result)
 
+for traj_id in range(len(merged_trajs)):
+    for step_id in range(len(merged_trajs[traj_id])):
+        merged_trajs[traj_id][step_id]['action_list'] = "<split>".join(merged_trajs[traj_id][step_id]['action_list'])
+
 # Save the processed trajectories
 torch.save(merged_trajs, save_path)
 

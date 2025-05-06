@@ -3,14 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class CrossAttentionBlock(nn.Module):
-    def __init__(self, embed_dim, num_heads):
+    def __init__(self, embed_dim:int, num_heads:int):
         super().__init__()
         self.attn_state_to_action = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
         self.attn_action_to_state = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
         self.norm_state = nn.LayerNorm(embed_dim)
         self.norm_action = nn.LayerNorm(embed_dim)
 
-    def forward(self, state, action):
+    def forward(self, state:torch.Tensor, action:torch.Tensor) -> torch.Tensor:
         attn_output_action, _ = self.attn_state_to_action(query=action, key=state, value=state)
         action = self.norm_action(action + attn_output_action)
 
@@ -60,7 +60,7 @@ class Transition_Model(nn.Module):
             nn.Linear(state_dim, state_dim),
         ).to(device)
     
-    def init(self):
+    def init_weight(self):
         for m in self.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 if self.activation.lower() == 'relu' or self.activation.lower() == 'leaky_relu':
@@ -84,7 +84,7 @@ class Transition_Model(nn.Module):
                     noise = torch.randn_like(one_hot) * 0.1
                     m.weight.copy_(one_hot + noise)
 
-    def forward(self, state, action):
+    def forward(self, state:torch.Tensor, action:torch.Tensor) -> torch.Tensor:
         # MODULE 0 : Embedding
         state = self.embedding_state(state)
         action = self.embedding_action(action)

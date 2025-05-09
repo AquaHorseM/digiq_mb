@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from transformers import AutoTokenizer, AutoModel
+import torchvision.models as models
 
 import re
 import ast
@@ -13,16 +14,26 @@ class StateEncoderVLM(nn.Module):
     def forward(self, image:torch.Tensor) -> torch.Tensor:
         pass
 
+class StateEncoderResNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        resnet = models.resnet152(weights=models.ResNet50_Weights.DEFAULT)
+        self.feature_extractor = nn.Sequential(*list(resnet.children())[:-1])
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        x = self.feature_extractor(image)
+        return x.view(x.size(0), -1) # 2048
+
 class ActionEncoder(nn.Module):
-    def __init__(self, critic_lm, cache_dir:str, device:str):
+    def __init__(self, backbone:str, cache_dir:str, device:str):
         self.device = device
         
-        self.base_lm_type = AutoModel.from_pretrained(critic_lm, cache_dir=cache_dir).to(device)
-        self.base_tokenizer_type = AutoTokenizer.from_pretrained(critic_lm, cache_dir=cache_dir)
+        self.base_lm_type = AutoModel.from_pretrained(backbone, cache_dir=cache_dir).to(device)
+        self.base_tokenizer_type = AutoTokenizer.from_pretrained(backbone, cache_dir=cache_dir)
         self.base_tokenizer_type.truncation_side = 'left'
         
-        self.base_lm_text = AutoModel.from_pretrained(critic_lm, cache_dir=cache_dir).to(device)
-        self.base_tokenizer_text = AutoTokenizer.from_pretrained(critic_lm, cache_dir=cache_dir)
+        self.base_lm_text = AutoModel.from_pretrained(backbone, cache_dir=cache_dir).to(device)
+        self.base_tokenizer_text = AutoTokenizer.from_pretrained(backbone, cache_dir=cache_dir)
         self.base_tokenizer_text.truncation_side = 'left'
 
     def parse_action_string(self, action_list:str|list[str]):

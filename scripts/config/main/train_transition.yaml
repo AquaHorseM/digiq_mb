@@ -1,0 +1,29 @@
+project_name: train_transition
+entity_name: DRL_Project_Group
+run_name: ''
+
+train:
+  load_path: TBD!
+  save_path: TBD!
+
+TransitionModel:
+  state_dim: 3584
+  action_dim: 768
+  embed_dim: 2048 # or others?
+  num_attn_layers: 12
+  num_heads: 12
+  activation: ReLU
+
+Action_encoder:
+  action_encoder_backbone: roberta-base # deberta-base , electra-base
+  action_encoder_cache_dir: TBD!
+
+data:
+  data_path: TBD!
+  batch_size: 512
+  capacity: 500000
+  train_ratio: 0.8
+  val_ratio: 0.2
+
+tools:
+  wandb_key: TBD!

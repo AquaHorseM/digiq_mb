@@ -53,10 +53,11 @@ def inference(model_path, image_dir, batch_size, steps):
         with torch.no_grad():
             outputs = model(
                 **inputs,
-                return_dict=True
+                return_dict=True,
+                output_hidden_states=True
             )
-            #last_hidden_state = outputs.hidden_states[-1]
-            reps = outputs.logits[:, -1, :]
+            last_hidden_state = outputs.hidden_states[-1]
+            reps = last_hidden_state[:, -1, :]
         
         reps = reps.cpu().numpy()
         for rep, step in zip(reps, steps[i:min(len(steps), i+batch_size)]):

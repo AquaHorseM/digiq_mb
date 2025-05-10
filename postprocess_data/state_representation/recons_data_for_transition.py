@@ -5,7 +5,8 @@ def reconstruct_data(trajs):
     data = []
     for traj in trajs:
         for step, next_step in zip(traj, traj[1:]):
-            data.append(dict(state=step["s_rep"], action=step["action"], next_state=next_step["s_rep"]))
+            simple_action = step["action"].split("Action Decision: ")[1]
+            data.append(dict(state=step["s_rep"], action=simple_action, next_state=next_step["s_rep"]))
     return data
 
 if __name__ == "__main__":

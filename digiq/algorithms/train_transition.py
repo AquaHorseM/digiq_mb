@@ -71,16 +71,16 @@ class TransitionModel_Trainer:
         train_data = all_data[:int(len(all_data)*train_ratio)]
         val_data = all_data[int(len(all_data)*train_ratio):]
         
-        train_buffer = ReplayBuffer(batch_size, capacity=capacity)
-        val_buffer = ReplayBuffer(batch_size, capacity=capacity)
+        train_buffer = TransitionReplayBuffer(batch_size, capacity=capacity)
+        val_buffer = TransitionReplayBuffer(batch_size, capacity=capacity)
 
         for d in train_data:
             train_buffer.insert(**d)
         for d in val_data:
             val_buffer.insert(**d)
         
-        train_dataset = ReplayBufferDataset(train_buffer)
-        val_dataset =ReplayBufferDataset(val_buffer)
+        train_dataset = TransitionReplayBufferDataset(train_buffer)
+        val_dataset =TransitionReplayBufferDataset(val_buffer)
 
         train_sampler = RandomSampler(train_dataset, replacement=True, num_samples=batch_size)
         val_sampler = RandomSampler(val_dataset, replacement=True, num_samples=batch_size)

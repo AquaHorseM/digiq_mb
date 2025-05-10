@@ -63,9 +63,11 @@ class Transition_Model(nn.Module):
     def init_weight(self):
         for m in self.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-                if self.activation.lower() == 'relu' or self.activation.lower() == 'leaky_relu':
-                    nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity=self.activation.lower())
-                elif self.activation.lower() == 'elu':
+                if isinstance(self.activation, nn.ReLU):
+                    nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                elif isinstance(self.activation, nn.LeakyReLU):
+                    nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
+                elif isinstance(self.activation, nn.ELU):
                     nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
                 else:
                     nn.init.xavier_normal_(m.weight)

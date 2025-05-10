@@ -17,10 +17,10 @@ import datetime
 from tqdm import tqdm
 import wandb
 
-from models.transition_model import Transition_Model
-from models.encoder import ActionEncoder
-from data.utils import ReplayBuffer
-from data.utils import ReplayBufferDataset
+from digiq.models.transition_model import Transition_Model
+from digiq.models.encoder import ActionEncoder
+from digiq.data.utils import TransitionReplayBuffer
+from digiq.data.utils import TransitionReplayBufferDataset
 
 class TransitionModel_Trainer:
     def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None,
@@ -33,7 +33,7 @@ class TransitionModel_Trainer:
         self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=self.device)
 
         self.trainsition_model = Transition_Model(state_dim, action_dim, embed_dim, num_attn_layers, num_heads, activation, self.device)
-        self.optimizer = optim.Adam(self.trainsition_model.parameters)
+        self.optimizer = optim.Adam(self.trainsition_model.parameters())
         self.trainsition_model, self.optimizer = self.accelerator.prepare(self.trainsition_model, self.optimizer)
 
         self.load_path = load_path
@@ -53,9 +53,10 @@ class TransitionModel_Trainer:
             self.trainsition_model.to(device)
 
     def loss(self, batch):
-        observation, image_features, actions_ori, action_list, reward, next_observation, next_image_features, done, mc_return, q_rep_out, q_rep_out_list, states, next_states = batch
+        print(batch)
+        states, actions, next_states = batch
         with torch.no_grad:
-            actions = self.action_encoder(actions_ori)
+            actions = self.action_encoder(actions)
 
         next_states_pre = self.trainsition_model.forward(states, actions)
         loss = F.mse_loss(next_states_pre, next_states)
@@ -66,8 +67,7 @@ class TransitionModel_Trainer:
         # step1: load and construct dataset
         assert(data_path is not None), "data path is required"
 
-        all_trajs = torch.load(data_path, weights_only=False)
-        all_data = list(itertools.chain.from_iterable(all_trajs))
+        all_data = torch.load(data_path, weights_only=False)
         train_data = all_data[:int(len(all_data)*train_ratio)]
         val_data = all_data[int(len(all_data)*train_ratio):]
         
@@ -113,10 +113,10 @@ class TransitionModel_Trainer:
 def TransitionModel_offpolicy_train(config):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     initp_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=60*60))
-    accelerator = Accelerator(kwargs_handlers=[ddp_kwargs, initp_kwargs], project_dir = config.save_path)
+    accelerator = Accelerator(kwargs_handlers=[ddp_kwargs, initp_kwargs], project_dir = config.train.save_path)
 
     wandb.login(key=config.tools.wandb_key)
-    wandb.init(project=config.project_name, entity=config.entity_name, name=config.run_name, config=dict(config))
+    wandb.init(project=config.project_name, name=config.run_name, config=dict(config))
 
     trainer = TransitionModel_Trainer(
         accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path,

@@ -26,6 +26,7 @@ class StateEncoderResNet(nn.Module):
 
 class ActionEncoder(nn.Module):
     def __init__(self, backbone:str, cache_dir:str, device:str):
+        super(ActionEncoder, self).__init__()
         self.device = device
         
         self.base_lm_type = AutoModel.from_pretrained(backbone, cache_dir=cache_dir).to(device)

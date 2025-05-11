@@ -94,7 +94,7 @@ class Transition_Model(nn.Module):
         for cross_attention_layer in self.cross_attention:
             state, action = cross_attention_layer(state, action)
         # MODULE 2 : MLP
-        cat = torch.cat(state, action)
+        cat = torch.cat([state, action], dim=-1)
         next_state = self.mlp(cat)
 
         return next_state

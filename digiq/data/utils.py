@@ -154,6 +154,11 @@ class TransitionReplayBuffer:
         Insert a single transition into the replay buffer.
         """
 
+        if self.states is None:
+            self.states = np.empty((self.max_size, *state.shape), dtype=state.dtype)
+            self.actions = np.array(['']*self.max_size, dtype = 'object')
+            self.next_states = np.empty((self.max_size, *next_state.shape), dtype=next_state.dtype)
+
         self.states[self.size % self.max_size] = state
         self.actions[self.size % self.max_size] = action
         self.next_states[self.size % self.max_size] = next_state

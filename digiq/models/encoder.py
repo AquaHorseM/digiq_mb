@@ -82,4 +82,4 @@ class ActionEncoder(nn.Module):
         action_type_states = self.base_lm_type(**action_type_ids).pooler_output
         action_text_states = self.base_lm_text(**action_text_ids).pooler_output
 
-        return torch.cat([action_type_states, action_text_states])
+        return torch.cat([action_type_states, action_text_states], dim=-1)

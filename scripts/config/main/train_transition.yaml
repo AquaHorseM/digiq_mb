@@ -4,11 +4,13 @@ run_name: ''
 
 train:
   load_path: null
-  save_path: /data/mqj/datasets/transition-model-general-1008trajs.pt
+  save_path: /data/mqj/datasets/
+  epoch: 100
+  val_interval: 10
 
 TransitionModel:
   state_dim: 3584
-  action_dim: 768
+  action_dim: 1536
   embed_dim: 2048 # or others?
   num_attn_layers: 12
   num_heads: 16

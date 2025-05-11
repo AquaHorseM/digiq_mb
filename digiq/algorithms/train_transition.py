@@ -13,6 +13,7 @@ from accelerate import DistributedDataParallelKwargs, InitProcessGroupKwargs
 import hydra
 import itertools
 import datetime
+import threading
 
 from tqdm import tqdm
 import wandb
@@ -23,7 +24,7 @@ from digiq.data.utils import TransitionReplayBuffer
 from digiq.data.utils import TransitionReplayBufferDataset
 
 class TransitionModel_Trainer:
-    def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None,
+    def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None, epoch:int=None, val_interval:int=None,
                  state_dim:int=None, action_dim:int=None, embed_dim:int=None, num_attn_layers:int=3, num_heads:int=5, activation:str="ReLU", 
                  action_encoder_backbone:str=None, action_encoder_cache_dir:str=None):
         self.accelerator = accelerator
@@ -38,7 +39,8 @@ class TransitionModel_Trainer:
 
         self.load_path = load_path
         self.save_path = save_path
-
+        self.epoch = epoch
+        self.val_interval = val_interval
         self.load(load_path, self.device)
 
     def save(self, path):
@@ -53,9 +55,8 @@ class TransitionModel_Trainer:
             self.trainsition_model.to(device)
 
     def loss(self, batch):
-        print(batch)
-        states, actions, next_states = batch
-        with torch.no_grad:
+        states, actions, next_states = batch['state'], batch['action'], batch['next_state']
+        with torch.no_grad():
             actions = self.action_encoder(actions)
 
         next_states_pre = self.trainsition_model.forward(states, actions)
@@ -90,21 +91,28 @@ class TransitionModel_Trainer:
         train_dataloader, val_dataloader = self.accelerator.prepare(train_dataloader, val_dataloader)
 
         # step2: train and val
-        for batch in tqdm(train_dataloader):
-            info = self.loss(batch)
-            wandb.log(info)
-            
+        best_loss = float("inf")
+        for epoch in range(self.epoch):
+            for batch in train_dataloader:
+                train_info = self.loss(batch)
+                wandb.log(train_info)
+                
             with self.accelerator.accumulate(self.trainsition_model):
                 self.optimizer.zero_grad()
-                self.accelerator.backward(info["loss"])
+                self.accelerator.backward(train_info["loss"])
                 self.optimizer.step()
 
-        for batch in tqdm(val_dataloader):
-            info = self.loss(batch)
-            wandb.log(info)
+            if epoch % self.val_interval == 0:
+                for batch in val_dataloader:
+                    val_info = self.loss(batch)
+                    wandb.log(val_info)
 
-        if self.accelerator.is_main_process:
-            self.save(self.save_path)
+                print(f'epoch {epoch} train loss: {train_info["loss"]} val loss: {val_info["loss"]}')
+                if self.accelerator.is_main_process and val_info["loss"] < best_loss:
+                    best_loss = val_info["loss"]
+                    self.save(self.save_path)
+                    print(f'saved best model with loss: {val_info["loss"]}')
+
 
     def online_train_loop(self):
         pass
@@ -119,7 +127,7 @@ def TransitionModel_offpolicy_train(config):
     wandb.init(project=config.project_name, name=config.run_name, config=dict(config))
 
     trainer = TransitionModel_Trainer(
-        accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path,
+        accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
         state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
         action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir
     )

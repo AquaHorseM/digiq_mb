@@ -111,3 +111,56 @@ class ReplayBuffer:
         self.mc_returns[self.size % self.max_size] = mc_return
 
         self.size += 1
+
+class TransitionReplayBufferDataset(Dataset):
+    def __init__(self, replay_buffer):
+        self.buffer = replay_buffer
+
+    def __len__(self):
+        # Return the number of items stored (or max_size if you want to sample uniformly)
+        return len(self.buffer)
+
+    def __getitem__(self, idx):
+        # Return a dictionary of one transition, indexed by idx.
+        # (Make sure that the replay_buffer’s arrays are already allocated.)
+        return {
+            "state": self.buffer.states[idx],
+            "action": self.buffer.actions[idx],
+            "next_state": self.buffer.next_states[idx],
+        }
+
+
+class TransitionReplayBuffer:
+    def __init__(self, batch_size=2, capacity=10000):
+        self.states = None
+        self.actions = None
+        self.next_states = None
+        self.batch_size = batch_size
+        self.max_size = capacity
+        self.size = 0
+
+    def __len__(self):
+        return self.size
+
+    def insert(
+        self,
+        /,
+        state: np.ndarray,
+        action: np.ndarray,
+        next_state: np.ndarray,
+        **kwargs
+    ):
+        """
+        Insert a single transition into the replay buffer.
+        """
+
+        if self.states is None:
+            self.states = np.empty((self.max_size, *state.shape), dtype=state.dtype)
+            self.actions = np.array(['']*self.max_size, dtype = 'object')
+            self.next_states = np.empty((self.max_size, *next_state.shape), dtype=next_state.dtype)
+
+        self.states[self.size % self.max_size] = state
+        self.actions[self.size % self.max_size] = action
+        self.next_states[self.size % self.max_size] = next_state
+
+        self.size += 1

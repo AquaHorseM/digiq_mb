@@ -1,0 +1,31 @@
+project_name: train_value
+entity_name: DRL_Project_Group
+run_name: ''
+
+train:
+  load_path: null
+  save_path: /data/mqj/datasets/
+  epoch: 100
+  val_interval: 10
+
+TransitionModel:
+  state_dim: 3584
+  goal_dim: 1536
+  embed_dim: 2048 # or others?
+  num_attn_layers: 12
+  num_heads: 16
+  activation: ReLU
+
+Action_encoder:
+  action_encoder_backbone: roberta-base # deberta-base , electra-base
+  action_encoder_cache_dir: null
+
+data:
+  data_path: /data/mqj/datasets/general-1008trajs-transition.pt
+  batch_size: 512
+  capacity: 500000
+  train_ratio: 0.8
+  val_ratio: 0.2
+
+tools:
+  wandb_key: e0eb5f8fe893dc0119123578457a29ce75167b03

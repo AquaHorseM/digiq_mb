@@ -40,31 +40,62 @@ def get_custom_reward_fn(config):
 
     return wrapped_fn
 
-from models.value import ValueNet
-from models.transition_model import Transition_Model
+def create_rl_dataset(data_paths, data_config, tokenizer, processor):
+    """Create a dataset.
 
-value = ValueNet() #TODO
-transition = Transition_Model() #TODO
+    Arguments:
+        data_config: The data config.
+        tokenizer (Tokenizer): The tokenizer.
+        processor (Processor): The processor.
 
-def reward(state, action):
-    return value(transition(state, action))
+    Returns:
+        dataset (Dataset): The dataset.
+    """
+    from torch.utils.data import Dataset
 
-@hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
-def main(config):
-    run_ppo(config)
+    from verl.utils.dataset.rl_dataset import RLHFDataset
 
+    if "custom_cls" in data_config and data_config.custom_cls.get("path", None) is not None:
+        from verl.utils.import_utils import load_extern_type
 
-def run_ppo(config) -> None:
-    if not ray.is_initialized():
-        # this is for local ray cluster
-        ray.init(
-            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"}},
-            num_cpus=config.ray_init.num_cpus,
-        )
+        dataset_cls = load_extern_type(data_config.custom_cls.path, data_config.custom_cls.name)
+        if not issubclass(dataset_cls, Dataset):
+            raise TypeError(f"The custom dataset class '{data_config.custom_cls.name}' from '{data_config.custom_cls.path}' must inherit from torch.utils.data.Dataset")
+    else:
+        dataset_cls = RLHFDataset
+    print(f"Using dataset class: {dataset_cls.__name__}")
 
-    runner = TaskRunner.remote()
-    ray.get(runner.run.remote(config))
+    dataset = dataset_cls(
+        data_files=data_paths,
+        tokenizer=tokenizer,
+        processor=processor,
+        config=data_config,
+    )
 
+    return dataset
+
+def create_rl_sampler(data_config, dataset):
+    """Create a sampler for the dataset.
+
+    Arguments:
+        data_config: The data config.
+        dataset (Dataset): The dataset.
+
+    Returns:
+        sampler (Sampler): The sampler.
+    """
+    import torch
+    from torch.utils.data import RandomSampler, SequentialSampler
+
+    # use sampler for better ckpt resume
+    if data_config.shuffle:
+        train_dataloader_generator = torch.Generator()
+        train_dataloader_generator.manual_seed(data_config.get("seed", 1))
+        sampler = RandomSampler(data_source=dataset, generator=train_dataloader_generator)
+    else:
+        sampler = SequentialSampler(data_source=dataset)
+
+    return sampler
 
 @ray.remote(num_cpus=1)  # please make sure main_task is not scheduled on head
 class TaskRunner:
@@ -170,65 +201,20 @@ class TaskRunner:
         trainer.init_workers()
         trainer.fit()
 
+@hydra.main(config_path="ppo", config_name="./config", version_base=None)
+def main(config):
+    run_ppo(config)
 
-def create_rl_dataset(data_paths, data_config, tokenizer, processor):
-    """Create a dataset.
+def run_ppo(config) -> None:
+    if not ray.is_initialized():
+        # this is for local ray cluster
+        ray.init(
+            runtime_env={"env_vars": {"TOKENIZERS_PARALLELISM": "true", "NCCL_DEBUG": "WARN", "VLLM_LOGGING_LEVEL": "WARN"}},
+            num_cpus=config.ray_init.num_cpus,
+        )
 
-    Arguments:
-        data_config: The data config.
-        tokenizer (Tokenizer): The tokenizer.
-        processor (Processor): The processor.
-
-    Returns:
-        dataset (Dataset): The dataset.
-    """
-    from torch.utils.data import Dataset
-
-    from verl.utils.dataset.rl_dataset import RLHFDataset
-
-    if "custom_cls" in data_config and data_config.custom_cls.get("path", None) is not None:
-        from verl.utils.import_utils import load_extern_type
-
-        dataset_cls = load_extern_type(data_config.custom_cls.path, data_config.custom_cls.name)
-        if not issubclass(dataset_cls, Dataset):
-            raise TypeError(f"The custom dataset class '{data_config.custom_cls.name}' from '{data_config.custom_cls.path}' must inherit from torch.utils.data.Dataset")
-    else:
-        dataset_cls = RLHFDataset
-    print(f"Using dataset class: {dataset_cls.__name__}")
-
-    dataset = dataset_cls(
-        data_files=data_paths,
-        tokenizer=tokenizer,
-        processor=processor,
-        config=data_config,
-    )
-
-    return dataset
-
-
-def create_rl_sampler(data_config, dataset):
-    """Create a sampler for the dataset.
-
-    Arguments:
-        data_config: The data config.
-        dataset (Dataset): The dataset.
-
-    Returns:
-        sampler (Sampler): The sampler.
-    """
-    import torch
-    from torch.utils.data import RandomSampler, SequentialSampler
-
-    # use sampler for better ckpt resume
-    if data_config.shuffle:
-        train_dataloader_generator = torch.Generator()
-        train_dataloader_generator.manual_seed(data_config.get("seed", 1))
-        sampler = RandomSampler(data_source=dataset, generator=train_dataloader_generator)
-    else:
-        sampler = SequentialSampler(data_source=dataset)
-
-    return sampler
-
+    runner = TaskRunner.remote()
+    ray.get(runner.run.remote(config))
 
 if __name__ == "__main__":
     main()

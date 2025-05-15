@@ -1,0 +1,36 @@
+actor_rollout_ref:
+  model:
+    path: null
+  actor:
+    strategy: null
+    use_kl_loss: null
+  rollout:
+    mode: null
+
+critic:
+  strategy: null
+
+reward_model:
+  enbale: null
+  strategy: null
+
+trainer:
+  n_gpus_per_node: int #TBD!
+  nnodes: int #TBD!
+
+algorithm:
+  use_kl_in_reward: bool #TBD!
+
+data:
+  trust_remote_code: null #???
+
+  train_files: null
+  val_files: null
+
+  # dataset # I don't understand it yet.
+  custom_cls:
+    path: null
+    name: null
+
+  # sampler
+  shuffle: true

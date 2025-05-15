@@ -1,36 +1,38 @@
+ray_init:
+  num_cpus: int #TBD
+
 actor_rollout_ref:
   model:
-    path: null
+    path: str # TBD!
   actor:
-    strategy: null
-    use_kl_loss: null
+    strategy: bool # "fsdp", "fsdp2", "megatron"
+    use_kl_loss: bool # TBD!
   rollout:
     mode: null
 
 critic:
-  strategy: null
+  strategy: null # ???
 
 reward_model:
-  enbale: null
-  strategy: null
+  enbale: bool # TBD!
+  strategy: str # "fsdp", "fsdp2", "megatron"
 
 trainer:
-  n_gpus_per_node: int #TBD!
-  nnodes: int #TBD!
+  n_gpus_per_node: int # TBD!
+  nnodes: int # TBD!
 
 algorithm:
-  use_kl_in_reward: bool #TBD!
+  use_kl_in_reward: bool # TBD!
 
 data:
   trust_remote_code: null #???
 
-  train_files: null
-  val_files: null
+  train_files: str # TBD!
+  val_files: str # TBD!
 
-  # dataset # I don't understand it yet.
   custom_cls:
-    path: null
-    name: null
+    path: str # TBD!
+    name: str # TBD!
 
   # sampler
   shuffle: true

@@ -16,8 +16,8 @@ class AttentionBlock(nn.Module):
 
         return state
 
-class ValueNet(nn.Module):
-    def __init__(self, state_dim:int, goal_dim:int, embed_dim, num_attn_layers:int, num_heads:int, device:str):
+class ValueModel(nn.Module):
+    def __init__(self, state_dim:int, goal_dim:int, embed_dim:int, num_attn_layers:int, num_heads:int, device:str):
         super().__init__()
 
         self.embedding_state = nn.Sequential(
@@ -47,6 +47,24 @@ class ValueNet(nn.Module):
             nn.ReLU(),
             nn.Linear(),
         ).to(device)
+
+    def init_weight(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            
+            elif isinstance(m, nn.BatchNorm1d) or isinstance(m, nn.BatchNorm2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+        
+            elif isinstance(m, nn.Embedding):
+                with torch.no_grad():
+                    one_hot = torch.eye(m.num_embeddings, m.embedding_dim)
+                    noise = torch.randn_like(one_hot) * 0.1
+                    m.weight.copy_(one_hot + noise)
 
     def forward(self, state:torch.Tensor, goal:torch.Tensor) -> torch.Tensor:
         # MODULE 0 : Embedding

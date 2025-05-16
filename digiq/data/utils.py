@@ -24,6 +24,8 @@ class ReplayBufferDataset(Dataset):
             "mc_return": self.buffer.mc_returns[idx],
             "q_rep_out": self.buffer.q_reps_out[idx],
             "q_rep_out_list": self.buffer.q_reps_out_list[idx],
+            "state": self.buffer.state[idx],
+            "next_state": self.buffer.next_state[idx],
         }
 
 
@@ -42,6 +44,8 @@ class ReplayBuffer:
         self.next_image_features = None
         self.q_reps_out = None
         self.q_reps_out_list = None
+        self.state = None
+        self.next_state = None
 
     def __len__(self):
         return self.size
@@ -60,6 +64,8 @@ class ReplayBuffer:
         mc_return,
         q_rep_out,
         q_rep_out_list,
+        state,
+        next_state,
         **kwargs
     ):
         """
@@ -93,6 +99,8 @@ class ReplayBuffer:
             self.next_observations = np.array(['']*self.max_size, dtype = 'object')
             self.dones = np.empty((self.max_size, *done.shape), dtype=done.dtype)
             self.mc_returns = np.empty((self.max_size, *mc_return.shape), dtype=mc_return.dtype)
+            self.state = np.empty((self.max_size, *state.shape), dtype=state.dtype)
+            self.next_state = np.empty((self.max_size, *next_state.shape), dtype=next_state.dtype)
 
         assert reward.shape == ()
         assert done.shape == ()
@@ -109,6 +117,8 @@ class ReplayBuffer:
         self.next_observations[self.size % self.max_size] = next_observation
         self.dones[self.size % self.max_size] = done
         self.mc_returns[self.size % self.max_size] = mc_return
+        self.state[self.size % self.max_size] = state
+        self.next_state[self.size % self.max_size] = next_state
 
         self.size += 1
 

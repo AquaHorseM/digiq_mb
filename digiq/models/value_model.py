@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from .transition_model import Transition_Model
+from .encoder import GoalEncoder, ActionEncoder
 
 class AttentionBlock(nn.Module):
     def __init__(self, embed_dim:int, num_heads:int):
@@ -17,8 +18,13 @@ class AttentionBlock(nn.Module):
         return state
 
 class ValueModel(nn.Module):
-    def __init__(self, state_dim:int, goal_dim:int, embed_dim:int, num_attn_layers:int, num_heads:int, device:str):
+    def __init__(self, state_dim:int, goal_dim:int, action_dim, embed_dim:int, num_attn_layers:int, num_heads:int,
+                 goal_encoder_backbone:str, goal_encoder_cache_dir:str, action_encoder_backbone:str, action_encoder_cache_dir:str,
+                 device:str):
         super().__init__()
+
+        self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=device)
+        self.goal_encoder = GoalEncoder(backbone=goal_encoder_backbone, cache_dir=goal_encoder_cache_dir, device=device)
 
         self.embedding_state = nn.Sequential(
             nn.Linear(state_dim, embed_dim),
@@ -32,11 +38,37 @@ class ValueModel(nn.Module):
             nn.Linear(embed_dim, embed_dim),
         ).to(device)
 
+        self.embedding_past_action = nn.Sequential(
+            nn.Linear(action_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim),
+        ).to(device)
+
+        self.embedding_others = nn.Sequential(
+            nn.Linear(embed_dim*2, embed_dim*2),
+            nn.ReLU(),
+            nn.Linear(embed_dim*2, embed_dim*2),
+            nn.ReLU(),
+            nn.Linear(embed_dim*2, embed_dim),
+        )
+
         self.attention = nn.ModuleList(
             [AttentionBlock(embed_dim, num_heads) for _ in range(num_attn_layers)]
         ).to(device)
 
-        self.critic = nn.Sequential(
+        self.critic1 = nn.Sequential(
+            nn.Linear(),
+            nn.ReLU(),
+            nn.Linear(),
+            nn.ReLU(),
+            nn.Linear(),
+            nn.ReLU(),
+            nn.Linear(),
+            nn.ReLU(),
+            nn.Linear(),
+        ).to(device)
+
+        self.critic2 = nn.Sequential(
             nn.Linear(),
             nn.ReLU(),
             nn.Linear(),
@@ -66,14 +98,14 @@ class ValueModel(nn.Module):
                     noise = torch.randn_like(one_hot) * 0.1
                     m.weight.copy_(one_hot + noise)
 
-    def forward(self, state:torch.Tensor, goal:torch.Tensor) -> torch.Tensor:
+    def forward(self, state:torch.Tensor, goal:str, past_action:str) -> torch.Tensor:
         # MODULE 0 : Embedding
         state = self.embedding_state(state)
-        goal = self.embedding_goal(goal)
+        goal = self.embedding_goal(self.goal_encoder(goal))
+        past_action = self.embedding_past_action(self.action_encoder(past_action))
+        others = self.embedding_others(torch.cat(goal, past_action))
         # MODULE 1 : Attention Layer
         for attention_layer in self.attention:
-            state = attention_layer(state, goal)
+            state = attention_layer(state, others)
         # MODULE 2 : MLP
-        value = self.critic(state)
-
-        return value
+        return self.critic1(state), self.critic2(state)

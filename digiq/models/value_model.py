@@ -17,10 +17,12 @@ class AttentionBlock(nn.Module):
 
         return state
 
-class ValueModel(nn.Module):
-    def __init__(self, state_dim:int, goal_dim:int, action_dim, embed_dim:int, num_attn_layers:int, num_heads:int,
-                 goal_encoder_backbone:str, goal_encoder_cache_dir:str, action_encoder_backbone:str, action_encoder_cache_dir:str,
-                 device:str):
+class Value_Model(nn.Module):
+    def __init__(
+        self, state_dim:int, goal_dim:int, action_dim, embed_dim:int, num_attn_layers:int, num_heads:int,
+        goal_encoder_backbone:str, goal_encoder_cache_dir:str, action_encoder_backbone:str, action_encoder_cache_dir:str,
+        device:str
+    ):
         super().__init__()
 
         self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=device)

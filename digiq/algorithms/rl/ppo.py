@@ -175,8 +175,21 @@ class TaskRunner:
             role_worker_mapping[Role.RefPolicy] = ray.remote(ActorRolloutRefWorker)
             mapping[Role.RefPolicy] = global_pool_id
 
-        reward_fn = load_reward_manager(config, tokenizer, num_examine=0, **config.reward_model.get("reward_kwargs", {}))
-        val_reward_fn = load_reward_manager(config, tokenizer, num_examine=1)
+        from .reward_manager import TransitionRewardManager
+        reward_fn = TransitionRewardManager(
+            state_dim=config.reward_manager.dim.state_dim, goal_dim=config.reward_manager.dim.goal_dim, action_dim=config.reward_manager.dim.action_dim, embed_dim=config.reward_manager.dim.embed_dim,
+            num_attn_layers_transition=config.reward_manager.transition.num_attn_layers, num_heads_transition=config.reward_manager.transition.num_heads, num_attn_layers_value=config.reward_manager.value.num_attn_layers, num_heads_value=config.reward_manager.value_num_heads,
+            goal_encoder_backbone=config.reward_manager.value.goal_encoder_backbone, goal_encoder_cache_dir=config.reward_manager.value.goal_encoder_cache_dir, action_encoder_backbone=config.reward_manager.value.action_encoder_backbone, action_encoder_cache_dir=config.reward_manager.value.action_encoder_cache_dir,
+            transition_load_path=config.reward_manager.load_path.transition_load_path, value_load_path=config.reward_manager.load_path.value_load_path, activation=config.reward_manager.transition.activation, device="cuda", # device!
+        )
+        val_reward_fn = TransitionRewardManager(
+            state_dim=config.reward_manager.dim.state_dim, goal_dim=config.reward_manager.dim.goal_dim, action_dim=config.reward_manager.dim.action_dim, embed_dim=config.reward_manager.dim.embed_dim,
+            num_attn_layers_transition=config.reward_manager.transition.num_attn_layers, num_heads_transition=config.reward_manager.transition.num_heads, num_attn_layers_value=config.reward_manager.value.num_attn_layers, num_heads_value=config.reward_manager.value_num_heads,
+            goal_encoder_backbone=config.reward_manager.value.goal_encoder_backbone, goal_encoder_cache_dir=config.reward_manager.value.goal_encoder_cache_dir, action_encoder_backbone=config.reward_manager.value.action_encoder_backbone, action_encoder_cache_dir=config.reward_manager.value.action_encoder_cache_dir,
+            transition_load_path=config.reward_manager.load_path.transition_load_path, value_load_path=config.reward_manager.load_path.value_load_path, activation=config.reward_manager.transition.activation, device="cuda", # device!
+        )
+        # reward_fn = load_reward_manager(config, tokenizer, num_examine=0, **config.reward_model.get("reward_kwargs", {}))
+        # val_reward_fn = load_reward_manager(config, tokenizer, num_examine=1)
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         from verl.utils.dataset.rl_dataset import collate_fn

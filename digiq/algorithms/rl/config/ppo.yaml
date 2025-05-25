@@ -37,6 +37,27 @@ data:
   # sampler
   shuffle: true
 
+reward_manager:
+  dim:
+    state_dim: 3584
+    goal_dim: 1536
+    action_dim: 1536
+    embed_dim: 2048
+  transition:
+    num_attn_layers: 12
+    num_heads: 16
+    activation: "ReLU"
+  value:
+    num_attn_layers: 12 # TBD!
+    num_heads: 16 # TBD!
+    goal_encoder_backbone: str # TBD!
+    goal_encoder_cache_dir: str # TBD!
+    action_encoder_backbone: str # TBD!
+    action_encoder_cache_dir: str # TBD!
+  load:
+    transition_load_path: str # TBD!
+    value_load_path: str # TBD!
+
 data:
   tokenizer: null
   train_files: ~/data/rlhf/gsm8k/train.parquet

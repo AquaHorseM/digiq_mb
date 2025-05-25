@@ -59,27 +59,27 @@ class Value_Model(nn.Module):
         ).to(device)
 
         self.critic1 = nn.Sequential(
-            nn.Linear(),
+            nn.Linear(embed_dim, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, 1),
         ).to(device)
 
         self.critic2 = nn.Sequential(
-            nn.Linear(),
+            nn.Linear(embed_dim, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
-            nn.Linear(),
+            nn.Linear(embed_dim*2, 1),
         ).to(device)
 
     def init_weight(self):

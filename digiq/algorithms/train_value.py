@@ -211,7 +211,7 @@ def ValueModel_offpolicy_train(config):
         state_dim=config.TransitionModel.state_dim, goal_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads,
     )
 
-    trainer.offpolicy_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
+    trainer.train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
 
 if __name__ == "__main__":
     ValueModel_offpolicy_train()

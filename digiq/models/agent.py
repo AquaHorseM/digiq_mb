@@ -141,7 +141,7 @@ class Agent(nn.Module):
         for attention_layer in self.attention:
             state = attention_layer(state, others)
         # MODULE 2 : MLP
-        latent_action = self.latent_action(torch.cat(state, goal, past_action))
+        latent_action = self.latent_action(torch.cat(state, others))
         # MODULE 3 : Action
         if determine:
             action_type = torch.argmax(self.action_type(latent_action))

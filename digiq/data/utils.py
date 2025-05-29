@@ -15,15 +15,17 @@ class ReplayBufferDataset(Dataset):
         return {
             "observation": self.buffer.observations[idx],
             "action": self.buffer.actions[idx],
-            "action_list": self.buffer.action_lists[idx],
-            "image_features": self.buffer.image_features[idx],
-            "next_image_features": self.buffer.next_image_features[idx],
+            # "action_list": self.buffer.action_lists[idx],
+            # "image_features": self.buffer.image_features[idx],
+            # "next_image_features": self.buffer.next_image_features[idx],
             "reward": self.buffer.rewards[idx],
             "next_observation": self.buffer.next_observations[idx],
             "done": self.buffer.dones[idx],
             "mc_return": self.buffer.mc_returns[idx],
-            "q_rep_out": self.buffer.q_reps_out[idx],
-            "q_rep_out_list": self.buffer.q_reps_out_list[idx],
+            # "q_rep_out": self.buffer.q_reps_out[idx],
+            # "q_rep_out_list": self.buffer.q_reps_out_list[idx],
+            "s_rep": self.buffer.s_rep[idx],
+            "next_s_rep": self.buffer.next_s_rep[idx],
         }
 
 
@@ -38,10 +40,12 @@ class ReplayBuffer:
         self.batch_size = batch_size
         self.actions = None
         self.mc_returns = None
-        self.image_features = None
-        self.next_image_features = None
-        self.q_reps_out = None
-        self.q_reps_out_list = None
+        # self.image_features = None
+        # self.next_image_features = None
+        # self.q_reps_out = None
+        # self.q_reps_out_list = None
+        self.s_rep = None
+        self.next_s_rep = None
 
     def __len__(self):
         return self.size
@@ -51,15 +55,17 @@ class ReplayBuffer:
         /,
         observation,
         action,
-        action_list,
-        image_features: np.ndarray,
-        next_image_features: np.ndarray,
+        # action_list,
+        # image_features: np.ndarray,
+        # next_image_features: np.ndarray,
         reward: np.ndarray,
         next_observation,
         done: np.ndarray,
         mc_return,
-        q_rep_out,
-        q_rep_out_list,
+        # q_rep_out,
+        # q_rep_out_list,
+        s_rep,
+        next_s_rep,
         **kwargs
     ):
         """
@@ -74,6 +80,9 @@ class ReplayBuffer:
                 done=done,
             )
         """
+        if next_s_rep is None:
+            return
+
         if isinstance(reward, (float, int)):
             reward = np.array(reward)
         if isinstance(mc_return, (float, int)):
@@ -84,31 +93,35 @@ class ReplayBuffer:
         if self.observations is None:
             self.observations = np.array(['']*self.max_size, dtype = 'object')
             self.actions = np.array(['']*self.max_size, dtype = 'object')
-            self.action_lists = np.array(['']*self.max_size, dtype = 'object')
-            self.image_features = np.empty((self.max_size, *image_features.shape), dtype=image_features.dtype)
-            self.next_image_features = np.empty((self.max_size, *next_image_features.shape), dtype=next_image_features.dtype)
-            self.q_reps_out = np.empty((self.max_size, *q_rep_out.shape), dtype=q_rep_out.dtype)
-            self.q_reps_out_list = np.empty((self.max_size, *q_rep_out_list.shape), dtype=q_rep_out_list.dtype)
+            # self.action_lists = np.array(['']*self.max_size, dtype = 'object')
+            # self.image_features = np.empty((self.max_size, *image_features.shape), dtype=image_features.dtype)
+            # self.next_image_features = np.empty((self.max_size, *next_image_features.shape), dtype=next_image_features.dtype)
+            # self.q_reps_out = np.empty((self.max_size, *q_rep_out.shape), dtype=q_rep_out.dtype)
+            # self.q_reps_out_list = np.empty((self.max_size, *q_rep_out_list.shape), dtype=q_rep_out_list.dtype)
             self.rewards = np.empty((self.max_size, *reward.shape), dtype=reward.dtype)
             self.next_observations = np.array(['']*self.max_size, dtype = 'object')
             self.dones = np.empty((self.max_size, *done.shape), dtype=done.dtype)
             self.mc_returns = np.empty((self.max_size, *mc_return.shape), dtype=mc_return.dtype)
+            self.s_rep = np.empty((self.max_size, *s_rep.shape), dtype=s_rep.dtype)
+            self.next_s_rep = np.empty((self.max_size, *next_s_rep.shape), dtype=next_s_rep.dtype)
 
         assert reward.shape == ()
         assert done.shape == ()
 
         # in some cases the q get rep errors out, need to get rid of this situation
         self.observations[self.size % self.max_size] = observation
-        self.image_features[self.size % self.max_size] = image_features
-        self.next_image_features[self.size % self.max_size] = next_image_features
-        self.q_reps_out[self.size % self.max_size] = q_rep_out
-        self.q_reps_out_list[self.size % self.max_size] = q_rep_out_list
+        # self.image_features[self.size % self.max_size] = image_features
+        # self.next_image_features[self.size % self.max_size] = next_image_features
+        # self.q_reps_out[self.size % self.max_size] = q_rep_out
+        # self.q_reps_out_list[self.size % self.max_size] = q_rep_out_list
         self.actions[self.size % self.max_size] = action
-        self.action_lists[self.size % self.max_size] = action_list
+        # self.action_lists[self.size % self.max_size] = action_list
         self.rewards[self.size % self.max_size] = reward
         self.next_observations[self.size % self.max_size] = next_observation
         self.dones[self.size % self.max_size] = done
         self.mc_returns[self.size % self.max_size] = mc_return
+        self.s_rep[self.size % self.max_size] = s_rep
+        self.next_s_rep[self.size % self.max_size] = next_s_rep
 
         self.size += 1
 

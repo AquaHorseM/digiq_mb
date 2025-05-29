@@ -32,10 +32,9 @@ class TransitionModel_Trainer:
 
         # self.state_encoder = None
         self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=self.device)
-
         self.trainsition_model = Transition_Model(state_dim, action_dim, embed_dim, num_attn_layers, num_heads, activation, self.device)
         self.optimizer = optim.Adam(self.trainsition_model.parameters())
-        self.trainsition_model, self.optimizer = self.accelerator.prepare(self.trainsition_model, self.optimizer)
+        self.action_encoder, self.trainsition_model, self.optimizer = self.accelerator.prepare(self.action_encoder, self.trainsition_model, self.optimizer)
 
         self.load_path = load_path
         self.save_path = save_path
@@ -43,7 +42,7 @@ class TransitionModel_Trainer:
         self.val_interval = val_interval
         self.load(load_path, self.device)
 
-    def save(self, path):
+    def save(self, path:str):
         time=datetime.datetime.now().strftime("%m%d%H%M")
         torch.save(self.trainsition_model.state_dict(), f"{path}/digiq_TransitionModel_{time}.pth")
 

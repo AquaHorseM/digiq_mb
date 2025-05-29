@@ -23,6 +23,20 @@ class StateEncoderResNet(nn.Module):
     def forward(self, image: torch.Tensor) -> torch.Tensor:
         x = self.feature_extractor(image)
         return x.view(x.size(0), -1) # 2048
+    
+class GoalEncoder(nn.Module):
+    def __init__(self, backbone:str, cache_dir:str, device:str):
+        super().__init__()
+        self.device = device
+
+        self.base_lm_task = AutoModel.from_pretrained(backbone, cache_dir=cache_dir).to(device)
+        self.base_tokenizer_task = AutoTokenizer.from_pretrained(backbone, cache_dir=cache_dir)
+        self.base_tokenizer_task.truncation_side = 'left'
+
+    def forward(self, goal:str) -> torch.Tensor:
+        goal_ids = self.base_tokenizer_task(goal, padding = True, return_tensors='pt', max_length=512, truncation = True).to(self.device)
+        goal_states = self.base_lm_task(**goal_ids).pooler_output
+        return goal_states
 
 class ActionEncoder(nn.Module):
     def __init__(self, backbone:str, cache_dir:str, device:str):

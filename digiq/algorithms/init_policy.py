@@ -164,9 +164,9 @@ class InitPolicy_Trainer:
                         val_info = self.loss(batch, validation=True)
                         wandb.log(val_info)
 
-                    print(f'epoch {epoch} train loss: {train_info["v1.loss"] + train_info["v2.loss"]} val loss: {val_info["validation.v1.loss"] + val_info["validation.v2.loss"]}')
-                    if self.accelerator.is_main_process and val_info["validation.v1.loss"] + val_info["validation.v2.loss"] < best_loss:
-                        best_loss = val_info["validation.v1.loss"] + val_info["validation.v2.loss"]
+                    print(f"loss: {val_info["total loss"]}")
+                    if self.accelerator.is_main_process and val_info["total loss"] < best_loss:
+                        best_loss = val_info["total loss"]
                         self.save(self.save_path)
                         print(f'saved best model with loss: {best_loss}')
 

@@ -2,7 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .encoder import GoalEncoder, ActionEncoder
+from digiq.models.encoder import GoalEncoder, ActionEncoder
+
+def process_action_str2tensor(action:str) -> torch.Tensor:
+    pass
+
+def process_action_tensor2str(action:torch.Tensor) -> str:
+    pass
 
 def init_weight(module:nn.Module):
     if isinstance(module, nn.Linear):
@@ -131,7 +137,7 @@ class Agent(nn.Module):
     def init_weight(self):
         self.apply(init_weight())
 
-    def forward(self, state:torch.Tensor, goal:torch.Tensor, past_action:torch.Tensor, determine:bool=False) -> torch.Tensor:
+    def forward(self, state:torch.Tensor, goal:torch.Tensor, past_action:torch.Tensor, determine:bool=False) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # MODULE 0 : Embedding
         state = self.embedding_state(state)
         goal = self.embedding_goal(self.goal_encoder(goal))
@@ -141,12 +147,17 @@ class Agent(nn.Module):
         for attention_layer in self.attention:
             state = attention_layer(state, others)
         # MODULE 2 : MLP
-        latent_action = self.latent_action(torch.cat(state, goal, past_action))
+        latent_action = self.latent_action(torch.cat(state, others))
         # MODULE 3 : Action
+        action_type_logits = None
+        typing_type_logits = None
+        bottom_button_type_logits = None
+
+        action_type_logits = self.action_type(latent_action)
         if determine:
-            action_type = torch.argmax(self.action_type(latent_action))
+            action_type = torch.argmax(action_type_logits)
         else:
-            action_type = torch.multinomial(F.softmax(self.action_type(latent_action)), num_samples=1)
+            action_type = torch.multinomial(F.softmax(action_type_logits, num_samples=1))
         
         typing_type = 0.0
         bottom_button_type = 0.0
@@ -155,20 +166,22 @@ class Agent(nn.Module):
         scroll_to_x, scroll_to_y = 0.0, 0.0
         
         if action_type == 0: # typing
+            typing_type_logits = self.typing_type(latent_action)
             if determine:
-                typing_type = torch.argmax(self.typing_type(latent_action))
+                typing_type = torch.argmax(typing_type_logits)
             else:
-                typing_type = torch.multinomial(F.softmax(self.typing_type(latent_action)), num_samples=1)
+                typing_type = torch.multinomial(F.softmax(typing_type_logits, num_samples=1))
         elif action_type == 1: # bottom_button
+            bottom_button_type_logits = self.bottom_button_type(latent_action)
             if determine:
-                bottom_button_type = torch.argmax(self.bottom_button_type(latent_action))
+                bottom_button_type = torch.argmax(bottom_button_type_logits)
             else:
-                bottom_button_type = torch.multinomial(F.softmax(self.bottom_button_type(latent_action)), num_samples=1)
+                bottom_button_type = torch.multinomial(F.softmax(bottom_button_type_logits), num_samples=1)
         elif action_type == 2: # touch
             touch_coord_x, touch_coord_y = self.touch_coord(latent_action)
         elif action_type == 3: # scroll
             scroll_from_x, scroll_from_y = self.scroll_from_coord(latent_action)
             scroll_to_x, scroll_to_y = self.scroll_to_coord(latent_action)
 
-        action = torch.tensor([typing_type, bottom_button_type, touch_coord_x, touch_coord_y, scroll_from_x, scroll_from_y, scroll_to_x, scroll_to_y], dtype=state.dtype, device=state.device)
-        return action
+        action = torch.tensor([action_type, typing_type, bottom_button_type, touch_coord_x, touch_coord_y, scroll_from_x, scroll_from_y, scroll_to_x, scroll_to_y], dtype=state.dtype, device=state.device)
+        return action, action_type_logits, typing_type_logits, bottom_button_type_logits

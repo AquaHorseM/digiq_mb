@@ -19,7 +19,7 @@ import threading
 from tqdm import tqdm
 import wandb
 
-from digiq.models.value_model import ValueModel
+from digiq.models.value_model import Value_Model
 from digiq.data.utils import ReplayBuffer
 from digiq.data.utils import ReplayBufferDataset
 
@@ -32,7 +32,7 @@ class ValueModel_Trainer:
         self.learn_metric = learn_metric
         self.advantage_estimation = advantage_estimation
         
-        self.value_model = ValueModel(state_dim=state_dim, goal_dim=goal_dim, action_dim=action_dim, embed_dim=embed_dim, num_attn_layers=num_attn_layers, num_heads=num_heads,
+        self.value_model = Value_Model(state_dim=state_dim, goal_dim=goal_dim, action_dim=action_dim, embed_dim=embed_dim, num_attn_layers=num_attn_layers, num_heads=num_heads,
                                       action_encoder_backbone=action_encoder_backbone, action_encoder_cache_dir=action_encoder_cache_dir,
                                       goal_encoder_backbone=goal_encoder_backbone, goal_encoder_cache_dir=goal_encoder_cache_dir,
                                       device=self.device)

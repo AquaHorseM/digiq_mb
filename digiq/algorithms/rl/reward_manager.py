@@ -18,6 +18,6 @@ class TransitionRewardManager:
     def __call__(self, batch:torch.Tensor) -> torch.Tensor:
         state, action = batch
         with torch.no_grad():
-            next_state = self.transition.forward(state, action)
+            next_state, _, _ = self.transition.forward(state, action)
             reward = self.value(next_state)
         return reward

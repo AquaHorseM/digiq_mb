@@ -2,6 +2,9 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 
+import argparse
+import random
+
 # ── 1) Rollout collection with latent-space “TD-reward” ────────────────────────
 def collect_latent_rollout(
     policy, value_fn, trans_model,
@@ -88,6 +91,7 @@ def train_model_based_bremen(
     policy, trans_model,
     sample_latent_starts,
     num_iters, batch_size, rollout_length,
+    data_file,
     gamma=0.99, lam=0.95,
     clip_eps=0.2,  ent_coef=0.01,
     bremen_epochs=4, lr=3e-4,
@@ -96,9 +100,12 @@ def train_model_based_bremen(
     policy.to(device); trans_model.to(device)
     optimizer = Adam(policy.parameters(), lr=lr)
 
+    # load data
+    steps = torch.load(data_file, weights_only=False)
+
     for it in range(1, num_iters+1):
         
-        init_states, tasks = sample_latent_starts(batch_size)
+        init_states, tasks = sample_latent_starts(batch_size, steps)
         # 1) collect latent rollout
         batch = collect_latent_rollout(
             policy, trans_model,
@@ -129,12 +136,13 @@ def train_model_based_bremen(
 
     return policy
 
-def sample_latent_starts(B):
+def sample_latent_starts(B, steps):
     """
     This function should return a batch of initial latent states and tasks
     """
-    init_states = torch.randn(B, STATE_DIM)  # Example: random latent states
-    tasks = torch.zeros(B, TASK_DIM)  # Example: zero tasks (or some task encoding)
+    sampled_steps = random.sample(steps, B)
+    init_states = torch.stack([step['s_rep'] for step in sampled_steps]) # 2d tensor
+    tasks = [step['task'] for step in sampled_steps] # list of str
     return init_states, tasks
 
 # ──  Example of how to call it ────────────────────────────────────────────────
@@ -146,12 +154,18 @@ if __name__ == "__main__":
     # trans_model  = MyTransNet(STATE_DIM, ACTION_DIM)
     # def sample_latent_starts(B): ...
     #
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_file", type=str, default="", help="Path to offline data")
+    args = parser.parse_args()
+
     trained_policy = train_model_based_bremen(
         policy, trans_model,
         sample_latent_starts,
         num_iters      = 1000,
         batch_size     = 64,
         rollout_length = 50,
+        data_file = args.data_file
         gamma=0.99, lam=0.95,
         clip_eps=0.2, ent_coef=0.01,
         bremen_epochs=4, lr=3e-4,

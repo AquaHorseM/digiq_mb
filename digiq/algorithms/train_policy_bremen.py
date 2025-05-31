@@ -20,10 +20,11 @@ def collect_latent_rollout(
     with torch.no_grad():
         for _ in range(rollout_length):
             dist  = policy(s)
-            a     = dist.sample()
-            lp    = dist.log_prob(a).sum(-1)
-            a = action_encoder(a).to(device)  # encode action if needed
-            s_next, done, r  = trans_model(tasks, s, a)
+            a     = policy.sample_action(dist)
+            lp    = policy.compute_log_prob(a, dist)
+            a_str = policy.process_action_tensor2str(a)
+            a_encoded = action_encoder(a_str).to(device)  # encode action if needed
+            s_next, done, r  = trans_model(tasks, s, a_encoded)
             v_next = value_fn(tasks, s_next).squeeze(-1)
             
             states.append(s)

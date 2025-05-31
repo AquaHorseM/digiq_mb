@@ -24,6 +24,10 @@ Action_encoder:
   action_encoder_backbone: roberta-base # deberta-base , electra-base
   action_encoder_cache_dir: null
 
+Goal_encoder:
+  goal_encoder_backbone: roberta-base
+  goal_encoder_cache_dir: null
+
 data:
   data_path: /content/drive/MyDrive/DRL_project_2/digiq_mb/datasets/general-origin-uitars-transition.pt
   batch_size: 512

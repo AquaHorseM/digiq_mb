@@ -1,0 +1,75 @@
+# scripts/config/main/training_pipeline.yaml
+
+# Project settings
+project_name: "[enter]"
+entity_name: "[enter]"
+run_name: "full_pipeline_training"
+
+# Training paths and settings
+train:
+  load_path: null  # Set to null for new training
+  save_path: "/data/mqj/datasets/"  # Update this path
+  epoch: 100
+  val_interval: 10
+
+# Data settings
+data:
+  init_data_path: "/path/to/init_data.pt"  # Update this path
+  rl_data_path: "/path/to/rl_data.pt"      # Update this path
+  batch_size: 64
+  capacity: 500000
+  train_ratio: 0.8
+  val_ratio: 0.2
+
+# Model architecture settings
+TransitionModel:
+  state_dim: 3584
+  goal_dim: 1536
+  embed_dim: 2048
+  num_attn_layers: 12
+  num_heads: 16
+  activation: "ReLU"
+
+Agent:
+  num_sce_type: 2  # 0 for Asking questions and 1 for Searching for things
+  latent_action_dim: 2048  # Match with embed_dim
+  num_attn_layers_first: 12  # Match with TransitionModel
+  num_heads_first: 16  # Match with TransitionModel
+  num_attn_layers_second: 12  # Match with TransitionModel
+  num_heads_second: 16  # Match with TransitionModel
+
+# Encoder settings
+Action_encoder:
+  action_encoder_backbone: "roberta-base"  # Options: roberta-base, deberta-base, electra-base
+  action_encoder_cache_dir: null  # Update if you have a specific cache directory
+
+Goal_encoder:
+  goal_encoder_backbone: "roberta-base"  # Options: roberta-base, deberta-base, electra-base
+  goal_encoder_cache_dir: null  # Update if you have a specific cache directory
+
+# Initial policy training settings
+train_init_policy:
+  trainer_name: "BC"  # Options: "BC" or "MCP"
+  loss_coef_alpha: 1.0
+  loss_coef_beta: 1.0
+  trial_times: 10  # For MCP training
+  x_range_min: 0.0  # For touch/scroll actions
+  x_range_max: 1.0  # For touch/scroll actions
+  y_range_min: 0.0  # For touch/scroll actions
+  y_range_max: 1.0  # For touch/scroll actions
+
+# RL training settings
+train_rl:
+  num_iters: 1000
+  batch_size: 64
+  rollout_length: 50
+  gamma: 0.99
+  lam: 0.95
+  clip_eps: 0.2
+  ent_coef: 0.01
+  bremen_epochs: 4
+  lr: 3e-4
+
+# Tools settings
+tools:
+  wandb_key: e0eb5f8fe893dc0119123578457a29ce75167b03 # Update with your Wandb key

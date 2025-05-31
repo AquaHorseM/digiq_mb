@@ -1,10 +1,11 @@
+import os
+import random
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torch.utils.data import RandomSampler
+from torch.utils.data import DataLoader, RandomSampler
 
 from accelerate import Accelerator
 from datetime import timedelta
@@ -14,6 +15,7 @@ import hydra
 import itertools
 import datetime
 import threading
+from pathlib import Path
 
 from tqdm import tqdm
 import wandb
@@ -26,15 +28,24 @@ from digiq.data.utils import TransitionReplayBufferDataset
 class TransitionModel_Trainer:
     def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None, epoch:int=None, val_interval:int=None,
                  state_dim:int=None, action_dim:int=None, embed_dim:int=None, num_attn_layers:int=3, num_heads:int=5, activation:str="ReLU", 
-                 action_encoder_backbone:str=None, action_encoder_cache_dir:str=None):
+                 action_encoder_backbone:str=None, action_encoder_cache_dir:str=None, model_id: int = 0, seed: int = 0):
+
+        self.model_id = model_id
+        self.seed = seed
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+
         self.accelerator = accelerator
         self.device = self.accelerator.device
 
         # self.state_encoder = None
         self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=self.device)
+
+
         self.trainsition_model = Transition_Model(state_dim, action_dim, embed_dim, num_attn_layers, num_heads, activation, self.device)
         self.optimizer = optim.Adam(self.trainsition_model.parameters())
-        self.action_encoder, self.trainsition_model, self.optimizer = self.accelerator.prepare(self.action_encoder, self.trainsition_model, self.optimizer)
+        self.trainsition_model, self.optimizer = self.accelerator.prepare(self.trainsition_model, self.optimizer)
 
         self.load_path = load_path
         self.save_path = save_path
@@ -42,20 +53,21 @@ class TransitionModel_Trainer:
         self.val_interval = val_interval
         self.load(load_path, self.device)
 
-    def save(self, path:str):
-        time=datetime.datetime.now().strftime("%m%d%H%M")
-        torch.save(self.trainsition_model.state_dict(), f"{path}/digiq_TransitionModel_{time}.pth")
+    def save(self, path):
+        fname = f"digiq_TransitionModel_M{self.model_id}_best.pth"
+        torch.save(self.trainsition_model.state_dict(), os.path.join(path, fname))
 
-    def load(self, path:str, device:str):
+
+    def load(self, path: str, device: str):
         if path:
             self.trainsition_model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+
         else:
             self.trainsition_model.init_weight()
             self.trainsition_model.to(device)
 
     def loss(self, batch):
         observation, action, reward, next_observation, done, mc_return, state, next_state = batch
-        
         with torch.no_grad():
             action = self.action_encoder(action)
 
@@ -172,22 +184,38 @@ class TransitionModel_Trainer:
                         self.save(self.save_path)
                         print(f"[M{self.model_id}] saved best model (loss={best_loss:.4f})")
 
-@hydra.main(config_name="train_transition", config_path="../../scripts/config/main", version_base="1.3")
+@hydra.main(config_name="train_transition_model", config_path="../../scripts/config/main", version_base="1.3")
 def TransitionModel_offpolicy_train(config):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-    initp_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=60*60))
-    accelerator = Accelerator(kwargs_handlers=[ddp_kwargs, initp_kwargs], project_dir = config.train.save_path)
+    initp_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=60 * 60))
+    accelerator = Accelerator(kwargs_handlers=[ddp_kwargs, initp_kwargs], project_dir=config.train.save_path)
 
     wandb.login(key=config.tools.wandb_key)
-    wandb.init(project=config.project_name, name=config.run_name, config=dict(config))
 
-    trainer = TransitionModel_Trainer(
-        accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
-        state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
-        action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir
-    )
+    K = config.train.K
+    base_seed = config.train.seed
+    bagging = getattr(config.train, "bagging", False)
 
-    trainer.offpolicy_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
+    for k in range(K):
+        run_name = f"{config.run_name or 'Transition'}_M{k}"
+
+        wandb.init(project=config.project_name, name=run_name, config=dict(config))
+        
+        trainer = TransitionModel_Trainer(
+            accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
+            state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
+            action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, model_id=k, seed=base_seed + k
+        )
+
+        trainer.offpolicy_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio, bagging=bagging)
+
+        wandb.finish()
+
+        #To free GPU memory
+        del trainer
+        torch.cuda.empty_cache()
+        accelerator.free_memory()
+
 
 @hydra.main(config_name="train_transition", config_path="../../scripts/config/main", version_base="1.3")
 def TransitionModel_breman_train(config):

@@ -1,4 +1,5 @@
 import os
+import re
 import random
 import numpy as np
 import torch
@@ -65,12 +66,36 @@ class TransitionModel_Trainer:
             self.trainsition_model.init_weight()
             self.trainsition_model.to(device)
 
+    def parse_obs(self, observation):
+        if type(observation) == str:
+            observation = [observation]
+        
+        # obs example: Previous Actions: Goal: Go to newegg.com</s>
+        previous_actions = []
+        goals = []
+        for obs in observation:
+            previous_action_match = re.search(r'Previous Actions: (.*?)Goal:', obs)
+            goal_match = re.search(r'Goal: (.*?)</s>', obs)
+            
+            # Map None to an empty string if no match is found
+            previous_actions.append(previous_action_match.group(1) if previous_action_match else "")
+            goals.append(goal_match.group(1) if goal_match else "")
+
+        return previous_actions, goals
+
     def loss(self, batch):
         observation, action, reward, next_observation, done, mc_return, state, next_state = batch["observation"], batch["action"], batch["reward"], batch["next_observation"], batch["done"], batch["mc_return"], batch["s_rep"], batch["next_s_rep"]
+        #observation, action, reward, next_observation, done, mc_return, state, next_state = batch
+        #observation, action, reward, next_observation, done, mc_return, state, next_state = batch
+        past_action, goal = self.parse_obs(observation)
         with torch.no_grad():
             action = self.action_encoder(action)
-
-        next_states_pre, terminal_pre, reward_pre = self.trainsition_model.forward(state, action)
+        #reward = reward.to(self.device).flatten()
+        done = torch.Tensor(done).to(self.device).flatten()
+        mc_return = torch.Tensor(mc_return).to(self.device).flatten()
+        past_action, goal = self.parse_obs(observation)
+        next_past_action, next_goal = self.parse_obs(next_observation)
+        next_states_pre, terminal_pre, reward_pre = self.trainsition_model.forward(state, action, goal)
         loss_ns = F.mse_loss(next_states_pre, next_state)
         loss_t = F.binary_cross_entropy(terminal_pre, reward)
         loss_r = F.mse_loss(reward_pre, reward)
@@ -78,11 +103,14 @@ class TransitionModel_Trainer:
 
         return {"loss": loss, "next_state loss":loss_ns, "terminal loss": loss_t, "reward loss": loss_r}
 
-    def offpolicy_train_loop(self, data_path, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
+    def offpolicy_train_loop(self, data_path_general, data_path_web_shop, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
         # step1: load and construct dataset
-        assert(data_path is not None), "data path is required"
+        assert data_path_general is not None, "data path is required"
+        assert data_path_web_shop is not None, "data path is required"
 
-        all_data = torch.load(data_path, weights_only=False)
+        all_data_general = torch.load(data_path_general, weights_only=False)
+        all_data_web_shop = torch.load(data_path_web_shop, weights_only=False)
+        all_data = all_data_general + all_data_web_shop
         train_data = all_data[:int(len(all_data)*train_ratio)]
         val_data = all_data[int(len(all_data)*train_ratio):]
         
@@ -126,11 +154,14 @@ class TransitionModel_Trainer:
                     self.save(self.save_path)
                     print(f'saved best model with loss: {val_info["loss"]}')
 
-    def breman_train_loop(self, data_path, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
+    def breman_train_loop(self, data_path_general, data_path_web_shop, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
         # step1: load and construct dataset
-        assert data_path is not None, "data path is required"
+        assert data_path_general is not None, "data path is required"
+        assert data_path_web_shop is not None, "data path is required"
         
-        all_data = torch.load(data_path, weights_only=False)
+        all_data_general = torch.load(data_path_general, weights_only=False)
+        all_data_web_shop = torch.load(data_path_web_shop, weights_only=False)
+        all_data = all_data_general + all_data_web_shop
         if bagging:
             rng = np.random.default_rng(self.seed)
             idx = rng.choice(len(all_data), size=len(all_data), replace=True)
@@ -194,7 +225,7 @@ def TransitionModel_offpolicy_train(config):
         action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, seed=config.seed
     )
 
-    trainer.offpolicy_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
+    trainer.offpolicy_train_loop(data_path_general=config.data.data_path_general, data_path_web_shop=config.data.data_path_web_shop, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
 
 def TransitionModel_breman_train(config):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
@@ -214,11 +245,12 @@ def TransitionModel_breman_train(config):
         
         trainer = TransitionModel_Trainer(
             accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
-            state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
+            state_dim=config.TransitionModel.state_dim, goal_dim=config.TransitionModel.goal_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
             action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, model_id=k, seed=base_seed + k
         )
 
-        trainer.breman_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio, bagging=bagging)
+        trainer.breman_train_loop(data_path_general=config.data.data_path_general, data_path_web_shop=config.data.data_path_web_shop, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio, bagging=bagging)
+
 
         wandb.finish()
 

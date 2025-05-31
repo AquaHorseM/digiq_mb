@@ -175,7 +175,7 @@ class BehaviorCloning_Trainer(InitPolicy_Trainer):
         super().__init__(accelerator, load_path, save_path, epoch, val_interval, learn_metric, advantage_estimation, state_dim, goal_dim, action_dim, embed_dim, num_sce_type, latent_action_dim, num_attn_layers_first, num_heads_first, num_attn_layers_second, num_heads_second, goal_encoder_backbone, goal_encoder_cache_dir, action_encoder_backbone, action_encoder_cache_dir, loss_coef_alpha, loss_coef_beta)
 
     def loss(self, batch):
-        observation, image_features, action, action_list, reward, next_observation, next_image_features, done, mc_return, q_rep_out, q_rep_out_list, state, next_state = batch
+        observation, action, reward, next_observation, done, mc_return, state, next_state = batch
         reward = torch.Tensor(reward).to(self.device).flatten()
         done = torch.Tensor(done).to(self.device).flatten()
         mc_return = torch.Tensor(mc_return).to(self.device).flatten()
@@ -224,7 +224,7 @@ class MCP_Trainer(InitPolicy_Trainer):
                 torch.clamp(best_action[7]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
                 torch.clamp(best_action[8]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
             ])
-            new_state, _ = self.transition.forward(state=state, action=new_action)
+            new_state, _, _ = self.transition.forward(state=state, action=new_action)
             new_value = self.value.forward(state=new_state, goal=goal, past_action=process_action_tensor2str(new_action))
             if new_value>best_value:
                 best_action = new_action

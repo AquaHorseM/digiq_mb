@@ -48,7 +48,7 @@ class Transition_Model(nn.Module):
             [CrossAttentionBlock(embed_dim, num_heads) for _ in range(num_attn_layers)]
         ).to(device)
         
-        self.mlp = nn.Sequential(
+        self.mlp_next_state = nn.Sequential(
             nn.Linear(embed_dim*2, embed_dim*2),
             self.activation,
             nn.Linear(embed_dim*2, embed_dim*2),
@@ -65,7 +65,17 @@ class Transition_Model(nn.Module):
             self.activation,
             nn.Linear(embed_dim*2, embed_dim*2),
             self.activation,
-            nn.Linear(embed_dim*2, embed_dim*1),
+            nn.Linear(embed_dim*2, 1),
+        ).to(device)
+
+        self.mlp_reward = nn.Sequential(
+            nn.Linear(embed_dim*2, embed_dim*2),
+            self.activation,
+            nn.Linear(embed_dim*2, embed_dim*2),
+            self.activation,
+            nn.Linear(embed_dim*2, embed_dim*2),
+            self.activation,
+            nn.Linear(embed_dim*2, 1),
         ).to(device)
     
     def init_weight(self):
@@ -103,7 +113,8 @@ class Transition_Model(nn.Module):
             state, action = cross_attention_layer(state, action)
         # MODULE 2 : MLP
         cat = torch.cat([state, action], dim=-1)
-        next_state = self.mlp(cat)
-        terminal = self.mlp_termial(cat)
+        next_state = self.mlp_next_state(cat)
+        terminal = torch.softmax(self.mlp_termial(cat))
+        reward = self.mlp_reward(cat)
 
-        return next_state, terminal
+        return next_state, terminal, reward

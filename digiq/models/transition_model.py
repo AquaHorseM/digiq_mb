@@ -114,7 +114,7 @@ class Transition_Model(nn.Module):
         # MODULE 2 : MLP
         cat = torch.cat([state, action], dim=-1)
         next_state = self.mlp_next_state(cat)
-        terminal = torch.softmax(self.mlp_termial(cat))
+        terminal = torch.sigmoid(self.mlp_termial(cat), dim=1)
         reward = self.mlp_reward(cat)
 
         return next_state, terminal, reward

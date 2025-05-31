@@ -209,6 +209,11 @@ def ValueModel_offpolicy_train(config):
     trainer = ValueModel_Trainer(
         accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
         state_dim=config.TransitionModel.state_dim, goal_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads,
+        action_encoder_backbone=config.Action_encoder.action_encoder_backbone,
+        action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir,
+        goal_encoder_backbone=config.Goal_encoder.goal_encoder_backbone,
+        goal_encoder_cache_dir=config.Goal_encoder.goal_encoder_cache_dir,
+        action_dim=config.TransitionModel.action_dim
     )
 
     trainer.train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)

@@ -24,8 +24,9 @@ class ReplayBufferDataset(Dataset):
             "mc_return": self.buffer.mc_returns[idx],
             # "q_rep_out": self.buffer.q_reps_out[idx],
             # "q_rep_out_list": self.buffer.q_reps_out_list[idx],
-            "s_rep": self.buffer.s_rep[idx],
-            "next_s_rep": self.buffer.next_s_rep[idx],
+            "s_rep": self.buffer.state[idx],
+            "next_s_rep": self.buffer.next_state[idx],
+            "terminal": self.buffer.terminal[idx],
         }
 
 
@@ -122,7 +123,7 @@ class ReplayBuffer:
         self.mc_returns[self.size % self.max_size] = mc_return
         self.s_rep[self.size % self.max_size] = s_rep
         self.next_s_rep[self.size % self.max_size] = next_s_rep
-
+        self.terminal[self.size % self.max_size] = 0 if next_state is None else 0
         self.size += 1
 
 class TransitionReplayBufferDataset(Dataset):

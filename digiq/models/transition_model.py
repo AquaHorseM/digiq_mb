@@ -59,6 +59,14 @@ class Transition_Model(nn.Module):
             self.activation,
             nn.Linear(state_dim, state_dim),
         ).to(device)
+
+        self.mlp_termial = nn.Sequential(
+            nn.Linear(embed_dim*2, embed_dim*2),
+            self.activation,
+            nn.Linear(embed_dim*2, embed_dim*2),
+            self.activation,
+            nn.Linear(embed_dim*2, embed_dim*1),
+        ).to(device)
     
     def init_weight(self):
         for m in self.modules():
@@ -96,5 +104,6 @@ class Transition_Model(nn.Module):
         # MODULE 2 : MLP
         cat = torch.cat([state, action], dim=-1)
         next_state = self.mlp(cat)
+        terminal = self.mlp_termial(cat)
 
-        return next_state
+        return next_state, terminal

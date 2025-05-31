@@ -54,12 +54,13 @@ class TransitionModel_Trainer:
             self.trainsition_model.to(device)
 
     def loss(self, batch):
-        states, actions, next_states = batch['state'], batch['action'], batch['next_state']
+        observation, action, reward, next_observation, done, mc_return, state, next_state, terminal = batch
+        
         with torch.no_grad():
-            actions = self.action_encoder(actions)
+            action = self.action_encoder(action)
 
-        next_states_pre = self.trainsition_model.forward(states, actions)
-        loss = F.mse_loss(next_states_pre, next_states)
+        next_states_pre, terminal_pre = self.trainsition_model.forward(state, action)
+        loss = F.mse_loss(next_states_pre, next_state) + F.mse_loss(terminal_pre, terminal)
 
         return {"loss": loss}
 

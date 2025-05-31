@@ -17,7 +17,7 @@ TransitionModel:
   activation: ReLU
 
 Agent:
-  num_sce_type: int # TBD!
+  num_sce_type: 2 # 0 for Asking questions and 1 for Searching for things
   latent_action_dim: int # TBD!
   num_attn_layers_first: int # TBD!
   num_heads_first: int # TBD!

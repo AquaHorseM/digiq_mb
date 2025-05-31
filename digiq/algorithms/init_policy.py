@@ -164,9 +164,9 @@ class InitPolicy_Trainer:
                         val_info = self.loss(batch, validation=True)
                         wandb.log(val_info)
 
-                    print(f'epoch {epoch} train loss: {train_info["v1.loss"] + train_info["v2.loss"]} val loss: {val_info["validation.v1.loss"] + val_info["validation.v2.loss"]}')
-                    if self.accelerator.is_main_process and val_info["validation.v1.loss"] + val_info["validation.v2.loss"] < best_loss:
-                        best_loss = val_info["validation.v1.loss"] + val_info["validation.v2.loss"]
+                    print(f"loss: {val_info["total loss"]}")
+                    if self.accelerator.is_main_process and val_info["total loss"] < best_loss:
+                        best_loss = val_info["total loss"]
                         self.save(self.save_path)
                         print(f'saved best model with loss: {best_loss}')
 
@@ -203,7 +203,7 @@ class MCP_Trainer(InitPolicy_Trainer):
         self.y_range_max = y_range_max
 
     def loss(self, batch):
-        observation, image_features, action, action_list, reward, next_observation, next_image_features, done, mc_return, q_rep_out, q_rep_out_list, state, next_state = batch
+        observation, action, reward, next_observation, done, mc_return, state, next_state = batch
         reward = torch.Tensor(reward).to(self.device).flatten()
         done = torch.Tensor(done).to(self.device).flatten()
         mc_return = torch.Tensor(mc_return).to(self.device).flatten()
@@ -224,7 +224,7 @@ class MCP_Trainer(InitPolicy_Trainer):
                 torch.clamp(best_action[7]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
                 torch.clamp(best_action[8]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
             ])
-            new_state = self.transition.forward(state=state, action=new_action)
+            new_state, _ = self.transition.forward(state=state, action=new_action)
             new_value = self.value.forward(state=new_state, goal=goal, past_action=process_action_tensor2str(new_action))
             if new_value>best_value:
                 best_action = new_action

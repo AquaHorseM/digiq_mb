@@ -19,14 +19,16 @@ def collect_latent_rollout(
             a     = dist.sample()
             lp    = dist.log_prob(a).sum(-1)
             s_next, done, r  = trans_model(tasks, s, a)
-
-            states .append(s)
+            v_next = value_fn(tasks, s_next).squeeze(-1)
+            
+            states.append(s)
+            values.append(v_next)
             actions.append(a)
             log_probs.append(lp)
             rewards.append(r)
             s = s_next
 
-        v_final = value_fn(s).squeeze(-1)
+        v_final = value_fn(tasks, s).squeeze(-1)
 
     return {
         "states":    torch.stack(states,    dim=1),
@@ -86,7 +88,6 @@ def bremen_update(
 # ── 4) Main training loop ──────────────────────────────────────────────────────
 def train_model_based_bremen(
     policy, trans_model,
-    sample_latent_starts,
     num_iters, batch_size, rollout_length,
     gamma=0.99, lam=0.95,
     clip_eps=0.2,  ent_coef=0.01,
@@ -125,13 +126,13 @@ def train_model_based_bremen(
                 max_grad_norm=0.5
             )
 
-        print(f"[Iter {it:3d}] π_loss={p_loss:.4f}, V_loss={v_loss:.4f}, ent={ent:.4f}")
+        print(f"[Iter {it:3d}] π_loss={p_loss:.4f} ent={ent:.4f}")
 
     return policy
 
 def sample_latent_starts(B):
     """
-    This function should return a batch of initial latent states and tasks
+    This function should return a batch of initial latent states and encoded tasks
     """
     init_states = torch.randn(B, STATE_DIM)  # Example: random latent states
     tasks = torch.zeros(B, TASK_DIM)  # Example: zero tasks (or some task encoding)
@@ -148,7 +149,6 @@ if __name__ == "__main__":
     #
     trained_policy = train_model_based_bremen(
         policy, trans_model,
-        sample_latent_starts,
         num_iters      = 1000,
         batch_size     = 64,
         rollout_length = 50,

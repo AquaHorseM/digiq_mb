@@ -5,10 +5,9 @@ from torch.optim import Adam
 # ── 1) Rollout collection with latent-space “TD-reward” ────────────────────────
 def collect_latent_rollout(
     policy, value_fn, trans_model,
-    init_states_with_tasks, rollout_length, gamma, device
+    init_states, tasks, rollout_length, gamma, device="cuda"
 ):
     policy.eval(); value_fn.eval(); trans_model.eval()
-    init_states, tasks = init_states_with_tasks
     B = init_states.shape[0]
     s = init_states.to(device)
 
@@ -98,10 +97,13 @@ def train_model_based_bremen(
     optimizer = Adam(policy.parameters(), lr=lr)
 
     for it in range(1, num_iters+1):
+        
+        init_states, tasks = sample_latent_starts(batch_size)
         # 1) collect latent rollout
         batch = collect_latent_rollout(
             policy, trans_model,
-            init_states   = sample_latent_starts(batch_size),
+            init_states   = init_states.to(device),
+            tasks         = tasks.to(device),
             rollout_length= rollout_length,
             gamma         = gamma,
             device        = device
@@ -126,6 +128,14 @@ def train_model_based_bremen(
         print(f"[Iter {it:3d}] π_loss={p_loss:.4f}, V_loss={v_loss:.4f}, ent={ent:.4f}")
 
     return policy
+
+def sample_latent_starts(B):
+    """
+    This function should return a batch of initial latent states and tasks
+    """
+    init_states = torch.randn(B, STATE_DIM)  # Example: random latent states
+    tasks = torch.zeros(B, TASK_DIM)  # Example: zero tasks (or some task encoding)
+    return init_states, tasks
 
 # ──  Example of how to call it ────────────────────────────────────────────────
 if __name__ == "__main__":

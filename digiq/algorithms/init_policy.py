@@ -15,7 +15,7 @@ import hydra
 import datetime
 import wandb
 
-from digiq.models.agent import Agent, process_action_str2tensor, process_action_tensor2str
+from digiq.models.agent import Agent
 from digiq.models.value_model import Value_Model
 from digiq.models.transition_model import Transition_Model
 from digiq.data.utils import ReplayBuffer
@@ -175,14 +175,14 @@ class BehaviorCloning_Trainer(InitPolicy_Trainer):
         super().__init__(accelerator, load_path, save_path, epoch, val_interval, learn_metric, advantage_estimation, state_dim, goal_dim, action_dim, embed_dim, num_sce_type, latent_action_dim, num_attn_layers_first, num_heads_first, num_attn_layers_second, num_heads_second, goal_encoder_backbone, goal_encoder_cache_dir, action_encoder_backbone, action_encoder_cache_dir, loss_coef_alpha, loss_coef_beta)
 
     def loss(self, batch):
-        observation, image_features, action, action_list, reward, next_observation, next_image_features, done, mc_return, q_rep_out, q_rep_out_list, state, next_state = batch
+        observation, action, reward, next_observation, done, mc_return, state, next_state = batch
         reward = torch.Tensor(reward).to(self.device).flatten()
         done = torch.Tensor(done).to(self.device).flatten()
         mc_return = torch.Tensor(mc_return).to(self.device).flatten()
         past_action, goal = self.parse_obs(observation)
         next_past_action, next_goal = self.parse_obs(next_observation)
         
-        action = process_action_str2tensor(action)
+        action = self.agent.process_action_str2tensor(action)
         action_pre, action_type_logits, typing_type_logits, bottom_button_type_logits = Agent.forward(state=state, goal=goal, past_action=past_action, determine=False)
 
         return self._loss(action_pre, action_type_logits, typing_type_logits, bottom_button_type_logits, action)
@@ -211,21 +211,27 @@ class MCP_Trainer(InitPolicy_Trainer):
         next_past_action, next_goal = self.parse_obs(next_observation)
 
         best_value = self.value.forward(state=next_state, goal=goal, past_action=action)
-        best_action = process_action_str2tensor(best_action)
+        best_action = self.agent.process_action_str2tensor(best_action, goal)
         for _ in range(self.trial_times):
-            new_action = torch.tensor([
-                torch.int(torch.clamp(best_action[0]+torch.normal(0, 1), 0, 3)),
-                torch.int(torch.clamp(best_action[1]+torch.normal(0, 1), 0, self.num_sce_type-1)),
-                torch.int(torch.clamp(best_action[2]+torch.normal(0, 1), 0, 2)),
-                torch.clamp(best_action[3]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
-                torch.clamp(best_action[4]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
-                torch.clamp(best_action[5]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
-                torch.clamp(best_action[6]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
-                torch.clamp(best_action[7]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
-                torch.clamp(best_action[8]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
-            ])
-            new_state, _ = self.transition.forward(state=state, action=new_action)
-            new_value = self.value.forward(state=new_state, goal=goal, past_action=process_action_tensor2str(new_action))
+            new_action = {
+                "action_type": torch.int(torch.clamp(best_action["action_type"]+torch.normal(0, 1), 0, 3)),
+                "typing_type": torch.int(torch.clamp(best_action["typing_type"]+torch.normal(0, 1), 0, self.num_sce_type-1)),
+                "button_type": torch.int(torch.clamp(best_action["button_type"]+torch.normal(0, 1), 0, 2)),
+                "touch_point": (
+                    torch.clamp(best_action["touch_point"][0]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
+                    torch.clamp(best_action["touch_point"][1]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
+                ),
+                "scroll_from": (
+                    torch.clamp(best_action["scroll_from"][0]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
+                    torch.clamp(best_action["scroll_from"][1]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
+                ),
+                "scroll_to"  : (
+                    torch.clamp(best_action["scroll_to"][0]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
+                    torch.clamp(best_action["scroll_to"][1]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
+                )
+            }
+            new_state, _, _ = self.transition.forward(state=state, action=new_action)
+            new_value = self.value.forward(state=new_state, goal=goal, past_action=self.agent.process_action_tensor2str(new_action, goal))
             if new_value>best_value:
                 best_action = new_action
                 best_value = new_value

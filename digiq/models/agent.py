@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 import ast
+import re
 
 from digiq.models.encoder import GoalEncoder, ActionEncoder
 
@@ -153,6 +154,9 @@ class Agent(nn.Module):
         action_dist = self.action(torch.cat(state, others))
 
     def sample_action(self, action_dist: torch.Tensor) -> torch.Tensor:
+        # 12维向量
+        # 0表示typing, 1表示导航栏1, 2表示导航栏2, 3表示导航栏3, 4表示touch, 5表示scroll. one-hot.
+        # 剩下的维度单个坐标的mu和sigma, 有 3*2 = 6个
         batch_size = action_dist.size(0)
 
         type_logits = action_dist[:,:6]
@@ -213,76 +217,98 @@ class Agent(nn.Module):
         action, action_type_logits, typing_type_logits, bottom_button_type_logits = self.forward(image_features, goal, past_action)
         return self.process_action_tensor2str(action, goal)
 
-    def process_action_str2tensor(action_str: str) -> dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]]:
-        action_str = action_str.replace("Action Decision: ", "").strip()
+    def get_typed_text(self, goal: str, typing_target_str_key: str = None) -> str:
+        """
+        Placeholder for your logic to get the typed text.
+        This needs to be implemented based on how your 'goal' and 'step_goals' work.
+        Args:
+            goal (str): The current goal string.
+            typing_target_str_key (str, optional): A key to look up in self.step_goals.
+        Returns:
+            str: The string for the "typed_text" field, e.g., "\"hello\"" or "\"\"".
+        """
+        if typing_target_str_key and typing_target_str_key in self.step_goals:
+            # Ensure the returned text is properly quoted for the action string
+            return f"\"{self.step_goals[typing_target_str_key]}\""
+        # Fallback logic if no key or step_goals are not sufficient
+        # For example, you might try to extract text from the goal, or return empty.
+        # print(f"Warning: Could not determine specific typed_text for goal '{goal}' and key '{typing_target_str_key}'. Defaulting to empty.")
+        return "\"\""
 
-        components = action_str.split(", ")
-        action = {}
+    def process_action_str2tensor(self, action_str: str) -> torch.Tensor:
+        parsed_dict = {}
+        action_str_cleaned = action_str.replace("Action Decision: ", "").strip()
+        pattern = r"\"(.*?)\":\s*\"(.*?)\""
+        matches = re.findall(pattern, action_str_cleaned)
+        for key, value in matches:
+            parsed_dict[key] = value
 
-        action_type_str = components[0].split(": ")[1].replace("\"", "")
-        if action_type_str == "TYPE":
-            action['action_type'] = 0
-        elif action_type_str == "PRESS_HOME":
-            action['action_type'] = 1
-            action['button_type'] = 0
-        elif action_type_str == "PRESS_BACK":
-            action['action_type'] = 1
-            action['button_type'] = 1
-        elif action_type_str == "PRESS_ENTER":
-            action['action_type'] = 1
-            action['button_type'] = 2
-        elif action_type_str == "DUAL_POINT":
-            action['action_type'] = 2
+        action_type_str = parsed_dict.get("action_type")
+        touch_point_str = parsed_dict.get("touch_point", "[0.0, 0.0]")
+        lift_point_str = parsed_dict.get("lift_point", "[0.0, 0.0]")
+        coords = [0.0] * 6
 
-        touch_point_str = components[1].split(": ")[1].replace("\"", "")
         touch_point = ast.literal_eval(touch_point_str)
-        action['touch_point'] = torch.tensor(touch_point)
-
-        lift_point_str = components[2].split(": ")[1].replace("\"", "")
         lift_point = ast.literal_eval(lift_point_str)
-        if lift_point != [0.0, 0.0]:
-            action['action_type'] = 3
-            action['scroll_from'] = torch.tensor(touch_point)
-            action['scroll_to'] = torch.tensor(lift_point)
 
-        return action
+        if action_type_str == "TYPE":
+            model_action_type_idx = 0
+        elif action_type_str == "PRESS_HOME":
+            model_action_type_idx = 1
+        elif action_type_str == "PRESS_BACK":
+            model_action_type_idx = 2
+        elif action_type_str == "PRESS_ENTER":
+            model_action_type_idx = 3
+        elif action_type_str == "DUAL_POINT":
+            is_scroll = (lift_point[0] != 0.0 or lift_point[1] != 0.0)
+            if is_scroll:
+                model_action_type_idx = 4
+                coords[0], coords[1] = touch_point[0], touch_point[1]  # scroll_from
+                coords[2], coords[3] = lift_point[0], lift_point[1]    # scroll_to
+            else:
+                model_action_type_idx = 5
+                coords[0], coords[1] = touch_point[0], touch_point[1]  # touch_point
 
-    def process_action_tensor2str(self, action:dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]], goal:str) -> str:
-        raw_action = "Action Decision: "
-        # Handle action type
-        raw_action += "\"action_type\": "
-        action_type = action['action_type']
+        action_type_tensor = F.one_hot(torch.tensor(model_action_type_idx), num_classes=6).float()
+        coords_tensor = torch.tensor(coords, dtype=torch.float32)
+        action_tensor = torch.cat((action_type_tensor, coords_tensor), dim=0)
+        return action_tensor
+
+    def process_action_tensor2str(self, action_tensor: torch.Tensor, goal: str, typing_action_key: str = None) -> str:
+        action_type = action_tensor[:6]
+        action_coord = action_tensor[6:]
+        action_type = torch.argmax(action_type).item()
+        action_str = ""
+        
+        def format_point_to_field_str(p1_val, p2_val):
+            return f"\"[{p1_val:.7g}, {p2_val:.7g}]\""
+        output_touch_point_str = format_point_to_field_str(0.0, 0.0)
+        output_lift_point_str = format_point_to_field_str(0.0, 0.0)
+        output_typed_text_str = "\"\""
+
         if action_type == 0: # typing
-            raw_action += "\"TYPE\""
-        elif action_type == 1: # bottom_button
-            button_type = action['button_type']
-            if button_type == 0:
-                raw_action += "\"PRESS_HOME\""
-            elif button_type == 1:
-                raw_action += "\"PRESS_BACK\""
-            elif button_type == 2:
-                raw_action += "\"PRESS_ENTER\""
-        elif action_type == 2 or action_type == 3: # touch or scroll
-            raw_action += "\"DUAL_POINT\""
-        # handle touch point
-        raw_action += ", \"touch_point\": "
-        touch_point = "\"[0.0, 0.0]\""
-        if action_type == 2: # touch
-            touch_point = f"\"{str(action['touch_point'])}\""
-        elif action_type == 3: # scroll
-            touch_point = f"\"{str(action['scroll_from'])}\""
-        raw_action += touch_point
-        # handle lift point
-        raw_action += ", \"lift_point\": "
-        lift_point = "\"[0.0, 0.0]\""
-        if action_type == 3: # scroll
-            lift_point = f"\"{str(action['scroll_to'])}\""
-        raw_action += lift_point
-        # handle typed text
-        raw_action += ", \"typed_text\": "
-        typed_text = "\"\""
-        if action_type == 0: # type
-            typed_text = self.get_typed_text(goal, self.step_goals[action['typing_type']])
-        raw_action += typed_text
+            output_action_type_str = "\"TYPE\""
+            output_typed_text_str = self.get_typed_text(goal, typing_action_key)
+        elif action_type == 1: # press home
+            output_action_type_str = "\"PRESS_HOME\""
+            # Defaults for touch/lift points are [0.0, 0.0]
+        elif action_type == 2: # press back
+            output_action_type_str = "\"PRESS_BACK\""
+        elif action_type == 3: # press enter
+            output_action_type_str = "\"PRESS_ENTER\""
+        elif action_type == 4: # touch
+            output_action_type_str = "\"DUAL_POINT\""
+            output_touch_point_str = format_point_to_field_str(action_coord[0].item(), action_coord[1].item())
+            # lift_point remains [0.0, 0.0] for touch
+        elif action_type == 5: # scroll
+            output_action_type_str = "\"DUAL_POINT\""
+            output_touch_point_str = format_point_to_field_str(action_coord[0].item(), action_coord[1].item()) # scroll_from
+            output_lift_point_str = format_point_to_field_str(action_coord[2].item(), action_coord[3].item())   # scroll_to
 
-        return raw_action
+        action_str = "Action Decision: "
+        action_str += f"\"action_type\": {output_action_type_str}"
+        action_str += f", \"touch_point\": {output_touch_point_str}"
+        action_str += f", \"lift_point\": {output_lift_point_str}"
+        action_str += f", \"typed_text\": {output_typed_text_str}"
+
+        return action_str

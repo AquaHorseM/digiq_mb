@@ -1,14 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+import ast
 
 from digiq.models.encoder import GoalEncoder, ActionEncoder
-
-def process_action_str2tensor(action:str) -> torch.Tensor:
-    pass
-
-def process_action_tensor2str(action:torch.Tensor) -> str:
-    pass
 
 def init_weight(module:nn.Module):
     if isinstance(module, nn.Linear):
@@ -111,7 +108,7 @@ class CrossAttentionMLPModel(nn.Module):
 class Agent(nn.Module):
     def __init__(
         self, state_dim:int, goal_dim:int, action_dim, embed_dim:int, num_sce_type:int, latent_action_dim:int, num_attn_layers_first:int, num_heads_first:int, num_attn_layers_second:int, num_heads_second:int,
-        goal_encoder_backbone:str, goal_encoder_cache_dir:str, action_encoder_backbone:str, action_encoder_cache_dir:str,
+        goal_encoder_backbone:str, goal_encoder_cache_dir:str, action_encoder_backbone:str, action_encoder_cache_dir:str, typing_lm:str,
         device:str
     ):
         super().__init__()
@@ -134,10 +131,15 @@ class Agent(nn.Module):
         self.scroll_from_coord = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim, latent_action_dim], output_dim=2).to(device)
         self.scroll_to_coord = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim, latent_action_dim], output_dim=2).to(device)
 
+        # LLM for typing
+        self.tokenizer = AutoTokenizer.from_pretrained(typing_lm)
+        self.typing_lm = AutoModelForCausalLM.from_pretrained(typing_lm, torch_dtype="auto", device_map="auto")
+        self.step_goals = ["asking questions", "searching for things", "visiting websites"]
+
     def init_weight(self):
         self.apply(init_weight())
 
-    def forward(self, state:torch.Tensor, goal:torch.Tensor, past_action:torch.Tensor, determine:bool=False) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, state:torch.Tensor, goal:str, past_action:str, determine:bool=False) -> dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]]:
         # MODULE 0 : Embedding
         state = self.embedding_state(state)
         goal = self.embedding_goal(self.goal_encoder(goal))
@@ -183,5 +185,114 @@ class Agent(nn.Module):
             scroll_from_x, scroll_from_y = self.scroll_from_coord(latent_action)
             scroll_to_x, scroll_to_y = self.scroll_to_coord(latent_action)
 
-        action = torch.tensor([action_type, typing_type, bottom_button_type, touch_coord_x, touch_coord_y, scroll_from_x, scroll_from_y, scroll_to_x, scroll_to_y], dtype=state.dtype, device=state.device)
+        action = {
+            "action_type": action_type,
+            "typing_type": typing_type,
+            "button_type": bottom_button_type,
+            "touch_point": (touch_coord_x, touch_coord_y),
+            "scroll_from": (scroll_from_x, scroll_from_y),
+            "scroll_to"  : (scroll_to_x, scroll_to_y)
+        }
+
         return action, action_type_logits, typing_type_logits, bottom_button_type_logits
+    
+    def get_typed_text(self, goal:str, step_goal) -> str:
+        prompt = f"A phone user wants to acheive the following goal: \"{goal}\". The user needs to enter text in the input box of the user interface at a single step: **{step_goal}**. Provide the text the user should input. Your response should contain only the text the user should enter, without any additional information."
+
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+        text = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False # Switches between thinking and non-thinking modes. Default is True.
+        )
+        model_inputs = self.tokenizer([text], return_tensors="pt").to(self.typing_lm.device)
+
+        generated_ids = self.typing_lm.generate(
+            **model_inputs,
+            max_new_tokens=32
+        )
+        output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist() 
+        return self.tokenizer.decode(output_ids, skip_special_tokens=True)
+
+    def get_pi_action(self, observation:str, image_features:torch.Tensor) -> str:
+        goal = observation.split("Goal: ")[-1]
+        past_action = observation.split("Previous Actions: ")[-1].split("Goal: ")[0]
+        action, action_type_logits, typing_type_logits, bottom_button_type_logits = self.forward(image_features, goal, past_action)
+        return self.process_action_tensor2str(action, goal)
+
+    def process_action_str2tensor(action_str: str) -> dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]]:
+        action_str = action_str.replace("Action Decision: ", "").strip()
+
+        components = action_str.split(", ")
+        action = {}
+
+        action_type_str = components[0].split(": ")[1].replace("\"", "")
+        if action_type_str == "TYPE":
+            action['action_type'] = 0
+        elif action_type_str == "PRESS_HOME":
+            action['action_type'] = 1
+            action['button_type'] = 0
+        elif action_type_str == "PRESS_BACK":
+            action['action_type'] = 1
+            action['button_type'] = 1
+        elif action_type_str == "PRESS_ENTER":
+            action['action_type'] = 1
+            action['button_type'] = 2
+        elif action_type_str == "DUAL_POINT":
+            action['action_type'] = 2
+
+        touch_point_str = components[1].split(": ")[1].replace("\"", "")
+        touch_point = ast.literal_eval(touch_point_str)
+        action['touch_point'] = torch.tensor(touch_point)
+
+        lift_point_str = components[2].split(": ")[1].replace("\"", "")
+        lift_point = ast.literal_eval(lift_point_str)
+        if lift_point != [0.0, 0.0]:
+            action['action_type'] = 3
+            action['scroll_from'] = torch.tensor(touch_point)
+            action['scroll_to'] = torch.tensor(lift_point)
+
+        return action
+
+    def process_action_tensor2str(self, action:dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]], goal:str) -> str:
+        raw_action = "Action Decision: "
+        # Handle action type
+        raw_action += "\"action_type\": "
+        action_type = action['action_type']
+        if action_type == 0: # typing
+            raw_action += "\"TYPE\""
+        elif action_type == 1: # bottom_button
+            button_type = action['button_type']
+            if button_type == 0:
+                raw_action += "\"PRESS_HOME\""
+            elif button_type == 1:
+                raw_action += "\"PRESS_BACK\""
+            elif button_type == 2:
+                raw_action += "\"PRESS_ENTER\""
+        elif action_type == 2 or action_type == 3: # touch or scroll
+            raw_action += "\"DUAL_POINT\""
+        # handle touch point
+        raw_action += ", \"touch_point\": "
+        touch_point = "\"[0.0, 0.0]\""
+        if action_type == 2: # touch
+            touch_point = f"\"{str(action['touch_point'])}\""
+        elif action_type == 3: # scroll
+            touch_point = f"\"{str(action['scroll_from'])}\""
+        raw_action += touch_point
+        # handle lift point
+        raw_action += ", \"lift_point\": "
+        lift_point = "\"[0.0, 0.0]\""
+        if action_type == 3: # scroll
+            lift_point = f"\"{str(action['scroll_to'])}\""
+        raw_action += lift_point
+        # handle typed text
+        raw_action += ", \"typed_text\": "
+        typed_text = "\"\""
+        if action_type == 0: # type
+            typed_text = self.get_typed_text(goal, self.step_goals[action['typing_type']])
+        raw_action += typed_text
+
+        return raw_action

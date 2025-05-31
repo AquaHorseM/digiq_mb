@@ -189,7 +189,7 @@ def TransitionModel_offpolicy_train(config):
 
     trainer.offpolicy_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
 
-@hydra.main(config_name="train_transition_breman", config_path="../../scripts/config/main", version_base="1.3")
+@hydra.main(config_name="train_transition", config_path="../../scripts/config/main", version_base="1.3")
 def TransitionModel_breman_train(config):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     initp_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=60 * 60))
@@ -212,7 +212,7 @@ def TransitionModel_breman_train(config):
             action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, model_id=k, seed=base_seed + k
         )
 
-        trainer.offpolicy_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio, bagging=bagging)
+        trainer.breman_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio, bagging=bagging)
 
         wandb.finish()
 

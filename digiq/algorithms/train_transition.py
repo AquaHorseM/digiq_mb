@@ -21,15 +21,15 @@ from tqdm import tqdm
 import wandb
 
 from digiq.models.transition_model import Transition_Model
-from digiq.models.encoder import ActionEncoder
+from digiq.models.encoder import ActionEncoder, GoalEncoder
 from digiq.data.utils import ReplayBuffer
 from digiq.data.utils import ReplayBufferDataset
 
 class TransitionModel_Trainer:
     def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None, epoch:int=None, val_interval:int=None,
                  state_dim:int=None, action_dim:int=None, goal_dim:int=None, embed_dim:int=None, num_attn_layers:int=3, num_heads:int=5, activation:str="ReLU", 
-                 action_encoder_backbone:str=None, action_encoder_cache_dir:str=None, model_id:int=0, seed:int=0):
-
+                 action_encoder_backbone:str=None, action_encoder_cache_dir:str=None, goal_encoder_backbone:str=None, goal_encoder_cache_dir:str=None,
+                 model_id:int=None, seed:int=None):
         self.model_id = model_id
         self.seed = seed
         torch.manual_seed(seed)
@@ -41,7 +41,7 @@ class TransitionModel_Trainer:
 
         # self.state_encoder = None
         self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=self.device)
-
+        self.goal_encoder = GoalEncoder(backbone=goal_encoder_backbone, cache_dir=goal_encoder_cache_dir, device=self.device)
 
         self.trainsition_model = Transition_Model(state_dim, action_dim, goal_dim, embed_dim, num_attn_layers, num_heads, activation, self.device)
         self.optimizer = optim.Adam(self.trainsition_model.parameters())
@@ -54,13 +54,16 @@ class TransitionModel_Trainer:
         self.load(load_path, self.device)
 
     def save(self, path):
-        fname = f"digiq_TransitionModel_M{self.model_id}_best.pth"
-        torch.save(self.trainsition_model.state_dict(), os.path.join(path, fname))
+        if self.model_id:
+            name = f"digiq_TransitionModel_M{self.model_id}.pth"
+            torch.save(self.trainsition_model.state_dict(), os.path.join(path, name))
+        else:
+            time=datetime.datetime.now().strftime("%m%d%H%M")
+            torch.save(self.value_model.state_dict(), f"{path}/digiq_TransitionModel_{time}.pth")
 
     def load(self, path: str, device: str):
         if path:
             self.trainsition_model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
-
         else:
             self.trainsition_model.init_weight()
             self.trainsition_model.to(device)
@@ -69,8 +72,9 @@ class TransitionModel_Trainer:
         observation, action, reward, next_observation, done, mc_return, state, next_state = batch["observation"], batch["action"], batch["reward"], batch["next_observation"], batch["done"], batch["mc_return"], batch["s_rep"], batch["next_s_rep"]
         with torch.no_grad():
             action = self.action_encoder(action)
+            goal = self.goal_encoder(goal)
 
-        next_states_pre, terminal_pre, reward_pre = self.trainsition_model.forward(state, action)
+        next_states_pre, terminal_pre, reward_pre = self.trainsition_model.forward(state, action, goal)
         loss_ns = F.mse_loss(next_states_pre, next_state)
         loss_t = F.binary_cross_entropy(terminal_pre, reward)
         loss_r = F.mse_loss(reward_pre, reward)
@@ -78,7 +82,7 @@ class TransitionModel_Trainer:
 
         return {"loss": loss, "next_state loss":loss_ns, "terminal loss": loss_t, "reward loss": loss_r}
 
-    def offpolicy_train_loop(self, data_path, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
+    def offpolicy_train_loop(self, data_path, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2):
         # step1: load and construct dataset
         assert(data_path is not None), "data path is required"
 
@@ -181,6 +185,7 @@ class TransitionModel_Trainer:
                         best_loss = val_info["loss"]
                         self.save(self.save_path)
                         print(f"[M{self.model_id}] saved best model (loss={best_loss:.4f})")
+
 def TransitionModel_offpolicy_train(config):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     initp_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=60 * 60))
@@ -191,7 +196,8 @@ def TransitionModel_offpolicy_train(config):
     trainer = TransitionModel_Trainer(
         accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
         state_dim=config.TransitionModel.state_dim, goal_dim=config.TransitionModel.goal_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
-        action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, seed=config.seed
+        action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, goal_encoder_backbone=config.Goal_encoder.goal_encoder_backbone, goal_encoder_cache_dir=config.Goal_encoder.goal_encoder_cache_dir,
+        seed=config.seed
     )
 
     trainer.offpolicy_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
@@ -215,7 +221,8 @@ def TransitionModel_breman_train(config):
         trainer = TransitionModel_Trainer(
             accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
             state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
-            action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, model_id=k, seed=base_seed + k
+            action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, goal_encoder_backbone=config.Goal_encoder.goal_encoder_backbone, goal_encoder_cache_dir=config.Goal_encoder.goal_encoder_cache_dir,
+            model_id=k, seed=base_seed + k
         )
 
         trainer.breman_train_loop(data_path=config.data.data_path, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio, bagging=bagging)

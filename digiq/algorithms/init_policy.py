@@ -214,7 +214,7 @@ class MCP_Trainer(InitPolicy_Trainer):
         best_action = self.agent.process_action_str2tensor(best_action, goal)
         for _ in range(self.trial_times):
             new_action = best_action + torch.normal(0, 1, best_action.shape)
-            new_state, _, _ = self.transition.forward(state=state, action=new_action)
+            new_state = self.transition.forward(state=state, action=new_action)
             new_value = self.value.forward(state=new_state, goal=goal, past_action=self.agent.process_action_tensor2str(new_action, goal))
             if new_value>best_value:
                 best_action = new_action

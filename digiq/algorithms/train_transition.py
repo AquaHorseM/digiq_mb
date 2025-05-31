@@ -22,8 +22,8 @@ import wandb
 
 from digiq.models.transition_model import Transition_Model
 from digiq.models.encoder import ActionEncoder
-from digiq.data.utils import TransitionReplayBuffer
-from digiq.data.utils import TransitionReplayBufferDataset
+from digiq.data.utils import ReplayBuffer
+from digiq.data.utils import ReplayBufferDataset
 
 class TransitionModel_Trainer:
     def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None, epoch:int=None, val_interval:int=None,
@@ -67,7 +67,7 @@ class TransitionModel_Trainer:
             self.trainsition_model.to(device)
 
     def loss(self, batch):
-        observation, action, reward, next_observation, done, mc_return, state, next_state = batch
+        observation, action, reward, next_observation, done, mc_return, state, next_state = batch["observation"], batch["action"], batch["reward"], batch["next_observation"], batch["done"], batch["mc_return"], batch["s_rep"], batch["next_s_rep"]
         with torch.no_grad():
             action = self.action_encoder(action)
 
@@ -79,7 +79,7 @@ class TransitionModel_Trainer:
 
         return {"loss": loss, "next_state loss":loss_ns, "terminal loss": loss_t, "reward loss": loss_r}
 
-    def offpolicy_train_loop(self, data_path, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2):
+    def offpolicy_train_loop(self, data_path, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
         # step1: load and construct dataset
         assert(data_path is not None), "data path is required"
 
@@ -87,16 +87,16 @@ class TransitionModel_Trainer:
         train_data = all_data[:int(len(all_data)*train_ratio)]
         val_data = all_data[int(len(all_data)*train_ratio):]
         
-        train_buffer = TransitionReplayBuffer(batch_size, capacity=capacity)
-        val_buffer = TransitionReplayBuffer(batch_size, capacity=capacity)
+        train_buffer = ReplayBuffer(batch_size, capacity=capacity)
+        val_buffer = ReplayBuffer(batch_size, capacity=capacity)
 
         for d in train_data:
             train_buffer.insert(**d)
         for d in val_data:
             val_buffer.insert(**d)
         
-        train_dataset = TransitionReplayBufferDataset(train_buffer)
-        val_dataset =TransitionReplayBufferDataset(val_buffer)
+        train_dataset = ReplayBufferDataset(train_buffer)
+        val_dataset =ReplayBufferDataset(val_buffer)
 
         train_sampler = RandomSampler(train_dataset, replacement=True, num_samples=batch_size)
         val_sampler = RandomSampler(val_dataset, replacement=True, num_samples=batch_size)
@@ -109,13 +109,12 @@ class TransitionModel_Trainer:
         best_loss = float("inf")
         for epoch in range(self.epoch):
             for batch in train_dataloader:
-                train_info = self.loss(batch)
-                wandb.log(train_info)
-                
-            with self.accelerator.accumulate(self.trainsition_model):
-                self.optimizer.zero_grad()
-                self.accelerator.backward(train_info["loss"])
-                self.optimizer.step()
+                with self.accelerator.accumulate(self.trainsition_model):
+                    train_info = self.loss(batch)
+                    self.optimizer.zero_grad()
+                    self.accelerator.backward(train_info["loss"])
+                    self.optimizer.step()
+                    wandb.log(train_info)
 
             if epoch % self.val_interval == 0:
                 for batch in val_dataloader:
@@ -141,16 +140,16 @@ class TransitionModel_Trainer:
         split = int(len(all_data) * train_ratio)
         train_data, val_data = all_data[:split], all_data[split:]
 
-        train_buffer = TransitionReplayBuffer(batch_size, capacity=capacity)
-        val_buffer = TransitionReplayBuffer(batch_size, capacity=capacity)
+        train_buffer = ReplayBuffer(batch_size, capacity=capacity)
+        val_buffer = ReplayBuffer(batch_size, capacity=capacity)
 
         for d in train_data:
             train_buffer.insert(**d)
         for d in val_data:
             val_buffer.insert(**d)
 
-        train_dataset = TransitionReplayBufferDataset(train_buffer)
-        val_dataset = TransitionReplayBufferDataset(val_buffer)
+        train_dataset = ReplayBufferDataset(train_buffer)
+        val_dataset = ReplayBufferDataset(val_buffer)
 
         g = torch.Generator()
         g.manual_seed(self.seed)
@@ -184,7 +183,7 @@ class TransitionModel_Trainer:
                         self.save(self.save_path)
                         print(f"[M{self.model_id}] saved best model (loss={best_loss:.4f})")
 
-@hydra.main(config_name="train_transition_model", config_path="../../scripts/config/main", version_base="1.3")
+
 def TransitionModel_offpolicy_train(config):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     initp_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=60 * 60))
@@ -217,7 +216,6 @@ def TransitionModel_offpolicy_train(config):
         accelerator.free_memory()
 
 
-@hydra.main(config_name="train_transition", config_path="../../scripts/config/main", version_base="1.3")
 def TransitionModel_breman_train(config):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     initp_kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=60 * 60))
@@ -230,13 +228,13 @@ def TransitionModel_breman_train(config):
     bagging = getattr(config.train, "bagging", False)
 
     for k in range(K):
-        run_name = f"{config.run_name or 'Dynamic'}_M{k}"
+        run_name = f"{config.run_name or 'Transition'}_M{k}"
 
         wandb.init(project=config.project_name, name=run_name, config=dict(config))
         
         trainer = TransitionModel_Trainer(
             accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
-            state_dim=config.DynamicModel.state_dim, action_dim=config.DynamicModel.action_dim, embed_dim=config.DynamicModel.embed_dim, num_attn_layers=config.DynamicModel.num_attn_layers, num_heads=config.DynamicModel.num_heads, activation=config.DynamicModel.activation,
+            state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
             action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, model_id=k, seed=base_seed + k
         )
 
@@ -249,6 +247,10 @@ def TransitionModel_breman_train(config):
         torch.cuda.empty_cache()
         accelerator.free_memory()
 
+@hydra.main(config_name="train_transition", config_path="../../scripts/config/main", version_base="1.3")
+def TransitionModel_train(config):
+    # TransitionModel_offpolicy_train(config)
+    TransitionModel_breman_train(config)
+
 if __name__ == "__main__":
-    TransitionModel_offpolicy_train()
-    # TransitionModel_breman_train()
+    TransitionModel_train()

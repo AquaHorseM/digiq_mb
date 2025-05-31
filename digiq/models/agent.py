@@ -139,11 +139,13 @@ class Agent(nn.Module):
     def init_weight(self):
         self.apply(init_weight())
 
-    def forward(self, state:torch.Tensor, goal:str, past_action:str, determine:bool=False) -> dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, state:torch.Tensor, goal:str|torch.Tensor, past_action:str|torch.Tensor, determine:bool=False) -> dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]]:
         # MODULE 0 : Embedding
         state = self.embedding_state(state)
-        goal = self.embedding_goal(self.goal_encoder(goal))
-        past_action = self.embedding_past_action(self.action_encoder(past_action))
+        if isinstance(goal, str):
+            goal = self.embedding_goal(self.goal_encoder(goal))
+        if isinstance(past_action, str):
+            past_action = self.embedding_past_action(self.action_encoder(past_action))
         others = self.embedding_others(torch.cat(goal, past_action))
         # MODULE 1 : Attention Layer
         for attention_layer in self.attention:

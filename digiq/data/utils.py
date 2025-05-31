@@ -26,6 +26,7 @@ class ReplayBufferDataset(Dataset):
             "q_rep_out_list": self.buffer.q_reps_out_list[idx],
             "state": self.buffer.state[idx],
             "next_state": self.buffer.next_state[idx],
+            "terminal": self.buffer.terminal[idx],
         }
 
 
@@ -46,6 +47,7 @@ class ReplayBuffer:
         self.q_reps_out_list = None
         self.state = None
         self.next_state = None
+        self.terminal = None
 
     def __len__(self):
         return self.size
@@ -101,6 +103,7 @@ class ReplayBuffer:
             self.mc_returns = np.empty((self.max_size, *mc_return.shape), dtype=mc_return.dtype)
             self.state = np.empty((self.max_size, *state.shape), dtype=state.dtype)
             self.next_state = np.empty((self.max_size, *next_state.shape), dtype=next_state.dtype)
+            self.terminal = np.empty((self.max_size, *reward.shape), dtype=reward.dtype)
 
         assert reward.shape == ()
         assert done.shape == ()
@@ -119,7 +122,7 @@ class ReplayBuffer:
         self.mc_returns[self.size % self.max_size] = mc_return
         self.state[self.size % self.max_size] = state
         self.next_state[self.size % self.max_size] = next_state
-
+        self.terminal[self.size % self.max_size] = 0 if next_state is None else 0
         self.size += 1
 
 class TransitionReplayBufferDataset(Dataset):

@@ -224,7 +224,7 @@ class MCP_Trainer(InitPolicy_Trainer):
                 torch.clamp(best_action[7]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
                 torch.clamp(best_action[8]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
             ])
-            new_state = self.transition.forward(state=state, action=new_action)
+            new_state, _ = self.transition.forward(state=state, action=new_action)
             new_value = self.value.forward(state=new_state, goal=goal, past_action=process_action_tensor2str(new_action))
             if new_value>best_value:
                 best_action = new_action

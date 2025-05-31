@@ -79,7 +79,7 @@ class ValueModel_Trainer:
         return previous_actions, goals
     
     def loss(self, batch, validation=False):
-        observation, image_features, action, action_list, reward, next_observation, next_image_features, done, mc_return, q_rep_out, q_rep_out_list, state, next_state = batch
+        observation, action, reward, next_observation, done, mc_return, state, next_state = batch
 
         reward = torch.Tensor(reward).to(self.device).flatten()
         done = torch.Tensor(done).to(self.device).flatten()

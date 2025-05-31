@@ -54,7 +54,7 @@ class TransitionModel_Trainer:
             self.trainsition_model.to(device)
 
     def loss(self, batch):
-        observation, image_features, action, action_list, reward, next_observation, next_image_features, done, mc_return, q_rep_out, q_rep_out_list, state, next_state, terminal = batch
+        observation, action, reward, next_observation, done, mc_return, state, next_state, terminal = batch
         
         with torch.no_grad():
             action = self.action_encoder(action)

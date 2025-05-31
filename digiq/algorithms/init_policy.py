@@ -203,7 +203,7 @@ class MCP_Trainer(InitPolicy_Trainer):
         self.y_range_max = y_range_max
 
     def loss(self, batch):
-        observation, image_features, action, action_list, reward, next_observation, next_image_features, done, mc_return, q_rep_out, q_rep_out_list, state, next_state = batch
+        observation, action, reward, next_observation, done, mc_return, state, next_state = batch
         reward = torch.Tensor(reward).to(self.device).flatten()
         done = torch.Tensor(done).to(self.device).flatten()
         mc_return = torch.Tensor(mc_return).to(self.device).flatten()

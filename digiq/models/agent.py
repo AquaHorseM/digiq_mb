@@ -7,6 +7,7 @@ import ast
 
 from digiq.models.encoder import GoalEncoder, ActionEncoder
 
+
 def init_weight(module:nn.Module):
     if isinstance(module, nn.Linear):
         nn.init.kaiming_uniform_(module.weight, a=torch.sqrt(5))
@@ -195,9 +196,15 @@ class Agent(nn.Module):
             "scroll_from": (scroll_from_x, scroll_from_y),
             "scroll_to"  : (scroll_to_x, scroll_to_y)
         }
-
+        #TODO: return an action distribution
         return action, action_type_logits, typing_type_logits, bottom_button_type_logits
     
+    def sample_action(self, action_distribution: dict) -> dict:
+        #TODO: sample an action instance from the action distribution
+        
+    def compute_log_prob(self, action:dict, action_distribution:dict) -> torch.Tensor:
+        #TODO: compute the log probability of the action given the action distribution
+        
     def get_typed_text(self, goal:str, step_goal) -> str:
         prompt = f"A phone user wants to acheive the following goal: \"{goal}\". The user needs to enter text in the input box of the user interface at a single step: **{step_goal}**. Provide the text the user should input. Your response should contain only the text the user should enter, without any additional information."
 

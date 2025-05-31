@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
+from digiq.models.encoder import GoalEncoder, ActionEncoder
 
 import argparse
 import random
@@ -8,7 +9,7 @@ import random
 # ── 1) Rollout collection with latent-space “TD-reward” ────────────────────────
 def collect_latent_rollout(
     policy, value_fn, trans_model,
-    init_states, tasks, rollout_length, gamma, device="cuda"
+    init_states, tasks, rollout_length, gamma, action_encoder, device="cuda"
 ):
     policy.eval(); value_fn.eval(); trans_model.eval()
     B = init_states.shape[0]
@@ -21,6 +22,7 @@ def collect_latent_rollout(
             dist  = policy(s)
             a     = dist.sample()
             lp    = dist.log_prob(a).sum(-1)
+            a = action_encoder(a).to(device)  # encode action if needed
             s_next, done, r  = trans_model(tasks, s, a)
             v_next = value_fn(tasks, s_next).squeeze(-1)
             
@@ -96,6 +98,7 @@ def train_model_based_bremen(
     gamma=0.99, lam=0.95,
     clip_eps=0.2,  ent_coef=0.01,
     bremen_epochs=4, lr=3e-4,
+    goal_encoder=None, action_encoder=None,
     device="cuda"
 ):
     policy.to(device); trans_model.to(device)
@@ -106,7 +109,7 @@ def train_model_based_bremen(
 
     for it in range(1, num_iters+1):
         
-        init_states, tasks = sample_latent_starts(batch_size, steps)
+        init_states, tasks = sample_latent_starts(batch_size, steps, goal_encoder)
         # 1) collect latent rollout
         batch = collect_latent_rollout(
             policy, trans_model,
@@ -114,6 +117,7 @@ def train_model_based_bremen(
             tasks         = tasks.to(device),
             rollout_length= rollout_length,
             gamma         = gamma,
+            action_encoder= action_encoder,
             device        = device
         )
 
@@ -137,13 +141,14 @@ def train_model_based_bremen(
 
     return policy
 
-def sample_latent_starts(B, steps):
+def sample_latent_starts(B, steps, goal_encoder):
     """
     This function should return a batch of initial latent states and encoded tasks
     """
     sampled_steps = random.sample(steps, B)
     init_states = torch.stack([step['s_rep'] for step in sampled_steps]) # 2d tensor
-    tasks = [step['task'] for step in sampled_steps] # list of str
+    tasks = [goal_encoder(step['task']) for step in sampled_steps] # list of str
+    tasks = torch.stack(tasks, dim=0) 
     return init_states, tasks
 
 # ──  Example of how to call it ────────────────────────────────────────────────
@@ -159,6 +164,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_file", type=str, default="", help="Path to offline data")
     args = parser.parse_args()
+    
+    #load the config from "scripts/config/main/bremen_rl.yaml" and initialize the goalencoder and action encoder
+    import yaml
+    with open("scripts/config/main/bremen_rl.yaml", 'r') as f:
+        config = yaml.safe_load(f)
+    goal_encoder_config = config['Goal_encoder']
+    action_encoder_config = config['Action_encoder']
+    goal_encoder = GoalEncoder(
+        backbone=goal_encoder_config['goal_encoder_backbone'],
+        cache_dir=goal_encoder_config['goal_encoder_cache_dir'],
+        device="cuda"
+    )
+    action_encoder = ActionEncoder(
+        backbone=action_encoder_config['action_encoder_backbone'],
+        cache_dir=action_encoder_config['action_encoder_cache_dir'],
+        device="cuda"
+    )
 
     trained_policy = train_model_based_bremen(
         policy, trans_model,
@@ -169,5 +191,7 @@ if __name__ == "__main__":
         gamma=0.99, lam=0.95,
         clip_eps=0.2, ent_coef=0.01,
         bremen_epochs=4, lr=3e-4,
+        goal_encoder=goal_encoder,
+        action_encoder=action_encoder,
         device="cuda"
     )

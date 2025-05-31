@@ -5,9 +5,10 @@ from torch.optim import Adam
 # ── 1) Rollout collection with latent-space “TD-reward” ────────────────────────
 def collect_latent_rollout(
     policy, value_fn, trans_model,
-    init_states, rollout_length, gamma, device
+    init_states_with_tasks, rollout_length, gamma, device
 ):
     policy.eval(); value_fn.eval(); trans_model.eval()
+    init_states, tasks = init_states_with_tasks
     B = init_states.shape[0]
     s = init_states.to(device)
 
@@ -18,7 +19,7 @@ def collect_latent_rollout(
             dist  = policy(s)
             a     = dist.sample()
             lp    = dist.log_prob(a).sum(-1)
-            s_next, done, r  = trans_model(s, a)
+            s_next, done, r  = trans_model(tasks, s, a)
 
             states .append(s)
             actions.append(a)

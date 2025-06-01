@@ -213,24 +213,8 @@ class MCP_Trainer(InitPolicy_Trainer):
         best_value = self.value.forward(state=next_state, goal=goal, past_action=action)
         best_action = self.agent.process_action_str2tensor(best_action, goal)
         for _ in range(self.trial_times):
-            new_action = {
-                "action_type": torch.int(torch.clamp(best_action["action_type"]+torch.normal(0, 1), 0, 3)),
-                "typing_type": torch.int(torch.clamp(best_action["typing_type"]+torch.normal(0, 1), 0, self.num_sce_type-1)),
-                "button_type": torch.int(torch.clamp(best_action["button_type"]+torch.normal(0, 1), 0, 2)),
-                "touch_point": (
-                    torch.clamp(best_action["touch_point"][0]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
-                    torch.clamp(best_action["touch_point"][1]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
-                ),
-                "scroll_from": (
-                    torch.clamp(best_action["scroll_from"][0]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
-                    torch.clamp(best_action["scroll_from"][1]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
-                ),
-                "scroll_to"  : (
-                    torch.clamp(best_action["scroll_to"][0]+torch.normal(0, 1), self.x_range_min, self.x_range_max),
-                    torch.clamp(best_action["scroll_to"][1]+torch.normal(0, 1), self.y_range_min, self.y_range_max),
-                )
-            }
-            new_state, _, _ = self.transition.forward(state=state, action=new_action)
+            new_action = best_action + torch.normal(0, 1, best_action.shape)
+            new_state = self.transition.forward(state=state, action=new_action)
             new_value = self.value.forward(state=new_state, goal=goal, past_action=self.agent.process_action_tensor2str(new_action, goal))
             if new_value>best_value:
                 best_action = new_action

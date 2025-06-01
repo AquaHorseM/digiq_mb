@@ -111,10 +111,14 @@ class Transition_Model(nn.Module):
         # MODULE 1 : Attention Layer
         for cross_attention_layer in self.cross_attention:
             state, action = cross_attention_layer(state, action)
-        # MODULE 2 : MLP
-        cat = torch.cat([state, action], dim=-1)
-        next_state = self.mlp_next_state(cat)
-        terminal = torch.sigmoid(self.mlp_terminal(cat))
-        reward = self.mlp_reward(cat)
-
-        return next_state, terminal, reward
+        next_state = self.mlp_next_state(torch.cat([state, action], dim=-1))
+        
+        if goal is not None:
+            goal = self.embedding_goal(goal)
+            for cross_attention_layer in self.cross_attention_with_goal:
+                state, goal = cross_attention_layer(state, goal)
+            terminal = torch.sigmoid(self.mlp_termial(torch.cat([state, goal], dim=-1)))
+            reward = self.mlp_reward(torch.cat([state, goal], dim=-1))
+            return next_state, terminal, reward
+        else:
+            return next_state

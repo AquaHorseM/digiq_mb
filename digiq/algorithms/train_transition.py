@@ -68,13 +68,16 @@ class TransitionModel_Trainer:
 
     def loss(self, batch):
         observation, action, reward, next_observation, done, mc_return, state, next_state = batch["observation"], batch["action"], batch["reward"], batch["next_observation"], batch["done"], batch["mc_return"], batch["s_rep"], batch["next_s_rep"]
+        past_action, goal = self.parse_obs(observation)
         with torch.no_grad():
             action = self.action_encoder(action)
-
-        next_states_pre, terminal_pre, reward_pre = self.trainsition_model.forward(state, action)
+            goal = self.action_encoder(goal)
+        done = torch.Tensor(done).to(self.device).flatten()
+        mc_return = torch.Tensor(mc_return).to(self.device).flatten()
+        next_states_pre, terminal_pre, reward_pre = self.trainsition_model.forward(state, action, goal)
         loss_ns = F.mse_loss(next_states_pre, next_state)
-        loss_t = F.binary_cross_entropy(terminal_pre, reward)
-        loss_r = F.mse_loss(reward_pre, reward)
+        loss_t = F.binary_cross_entropy(terminal_pre, reward.unsqueeze(-1).float())
+        loss_r = F.mse_loss(reward_pre, reward.unsqueeze(-1).float())
         loss = loss_ns + loss_t + loss_r
 
         return {"loss": loss, "next_state loss":loss_ns, "terminal loss": loss_t, "reward loss": loss_r}

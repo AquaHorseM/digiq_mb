@@ -29,6 +29,7 @@ from digiq.data.utils import ReplayBufferDataset
 class TransitionModel_Trainer:
     def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None, epoch:int=None, val_interval:int=None,
                  state_dim:int=None, action_dim:int=None, goal_dim:int=None, embed_dim:int=None, num_attn_layers:int=3, num_heads:int=5, activation:str="ReLU", 
+
                  action_encoder_backbone:str=None, action_encoder_cache_dir:str=None, model_id: int = 0, seed: int = 0):
 
         self.model_id = model_id

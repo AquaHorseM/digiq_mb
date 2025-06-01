@@ -24,8 +24,8 @@ class ReplayBufferDataset(Dataset):
             "mc_return": self.buffer.mc_returns[idx],
             # "q_rep_out": self.buffer.q_reps_out[idx],
             # "q_rep_out_list": self.buffer.q_reps_out_list[idx],
-            "s_rep": self.buffer.state[idx],
-            "next_s_rep": self.buffer.next_state[idx],
+            "s_rep": self.buffer.s_rep[idx],
+            "next_s_rep": self.buffer.next_s_rep[idx],
         }
 
 

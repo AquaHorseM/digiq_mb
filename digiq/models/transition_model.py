@@ -20,9 +20,8 @@ class CrossAttentionBlock(nn.Module):
         return state, action
 
 class Transition_Model(nn.Module):
-    def __init__(self, state_dim:int, action_dim:int, embed_dim:int, num_attn_layers:int=3, num_heads:int=5, activation:str="ReLU", device:str='cuda'):
+    def __init__(self, state_dim:int=None, action_dim:int=None, goal_dim:int=None, embed_dim:int=None, num_attn_layers:int=3, num_heads:int=5, activation:str="ReLU", device:str='cuda'):
         super().__init__()
-        
         self.device = device
 
         if activation=="ReLU":
@@ -43,10 +42,22 @@ class Transition_Model(nn.Module):
             self.activation,
             nn.Linear(embed_dim, embed_dim),
         ).to(device)
+        
+        if goal_dim:
+            self.embedding_goal = nn.Sequential(
+                nn.Linear(goal_dim, embed_dim),
+                self.activation,
+                nn.Linear(embed_dim, embed_dim),
+            ).to(device)
 
         self.cross_attention = nn.ModuleList(
             [CrossAttentionBlock(embed_dim, num_heads) for _ in range(num_attn_layers)]
         ).to(device)
+
+        if goal_dim:
+            self.cross_attention_with_goal = nn.ModuleList(
+                [CrossAttentionBlock(embed_dim, num_heads) for _ in range(num_attn_layers)]
+            ).to(device)
         
         self.mlp_next_state = nn.Sequential(
             nn.Linear(embed_dim*2, embed_dim*2),
@@ -60,23 +71,24 @@ class Transition_Model(nn.Module):
             nn.Linear(state_dim, state_dim),
         ).to(device)
 
-        self.mlp_terminal = nn.Sequential(
-            nn.Linear(embed_dim*2, embed_dim*2),
-            self.activation,
-            nn.Linear(embed_dim*2, embed_dim*2),
-            self.activation,
-            nn.Linear(embed_dim*2, 1),
-        ).to(device)
+        if goal_dim:
+            self.mlp_termial = nn.Sequential(
+                nn.Linear(embed_dim*2, embed_dim*2),
+                self.activation,
+                nn.Linear(embed_dim*2, embed_dim*2),
+                self.activation,
+                nn.Linear(embed_dim*2, 1),
+            ).to(device)
 
-        self.mlp_reward = nn.Sequential(
-            nn.Linear(embed_dim*2, embed_dim*2),
-            self.activation,
-            nn.Linear(embed_dim*2, embed_dim*2),
-            self.activation,
-            nn.Linear(embed_dim*2, embed_dim*2),
-            self.activation,
-            nn.Linear(embed_dim*2, 1),
-        ).to(device)
+            self.mlp_reward = nn.Sequential(
+                nn.Linear(embed_dim*2, embed_dim*2),
+                self.activation,
+                nn.Linear(embed_dim*2, embed_dim*2),
+                self.activation,
+                nn.Linear(embed_dim*2, embed_dim*2),
+                self.activation,
+                nn.Linear(embed_dim*2, 1),
+            ).to(device)
     
     def init_weight(self):
         for m in self.modules():
@@ -104,11 +116,10 @@ class Transition_Model(nn.Module):
                     noise = torch.randn_like(one_hot) * 0.1
                     m.weight.copy_(one_hot + noise)
 
-    def forward(self, state:torch.Tensor, action:torch.Tensor) -> torch.Tensor:
-        # MODULE 0 : Embedding
+    def forward(self, state:torch.Tensor, action:torch.Tensor, goal:torch.Tensor=None) -> torch.Tensor:
         state = self.embedding_state(state)
         action = self.embedding_action(action)
-        # MODULE 1 : Attention Layer
+
         for cross_attention_layer in self.cross_attention:
             state, action = cross_attention_layer(state, action)
         next_state = self.mlp_next_state(torch.cat([state, action], dim=-1))

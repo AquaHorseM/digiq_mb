@@ -7,6 +7,7 @@ import ast
 
 from digiq.models.encoder import GoalEncoder, ActionEncoder
 
+
 def init_weight(module:nn.Module):
     if isinstance(module, nn.Linear):
         nn.init.kaiming_uniform_(module.weight, a=torch.sqrt(5))
@@ -122,14 +123,10 @@ class Agent(nn.Module):
         self.embedding_others = MLP(input_dim=embed_dim*2, hidden_dims=[embed_dim*2, embed_dim*2], output_dim=embed_dim).to(device)
 
         self.attention = nn.ModuleList([AttentionBlock(embed_dim, num_heads_first) for _ in range(num_attn_layers_first)]).to(device)
-        self.latent_action = CrossAttentionMLPModel(input_dim=embed_dim*3, cross_layers=num_attn_layers_second, attn_heads=num_heads_second, mlp_hidden=[embed_dim*3, embed_dim*3], output_dim=latent_action_dim).to(device)
-
-        self.action_type = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim//2], output_dim=4).to(device)
-        self.typing_type = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim//2], output_dim=num_sce_type).to(device)
-        self.bottom_button_type = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim], output_dim=3).to(device)
-        self.touch_coord = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim, latent_action_dim], output_dim=2).to(device)
-        self.scroll_from_coord = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim, latent_action_dim], output_dim=2).to(device)
-        self.scroll_to_coord = MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim, latent_action_dim], output_dim=2).to(device)
+        self.action = nn.Sequential([
+            CrossAttentionMLPModel(input_dim=embed_dim*3, cross_layers=num_attn_layers_second, attn_heads=num_heads_second, mlp_hidden=[embed_dim*3, embed_dim*3], output_dim=latent_action_dim).to(device),
+            MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim, latent_action_dim, latent_action_dim], output_dim=18).to(device)
+        ])
 
         # LLM for typing
         self.tokenizer = AutoTokenizer.from_pretrained(typing_lm)
@@ -139,63 +136,62 @@ class Agent(nn.Module):
     def init_weight(self):
         self.apply(init_weight())
 
-    def forward(self, state:torch.Tensor, goal:str, past_action:str, determine:bool=False) -> dict[str:torch.Tensor|tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, state:torch.Tensor, goal:str|torch.Tensor, past_action:str|torch.Tensor, determine:bool=False) ->torch.Tensor:
         # MODULE 0 : Embedding
         state = self.embedding_state(state)
-        goal = self.embedding_goal(self.goal_encoder(goal))
-        past_action = self.embedding_past_action(self.action_encoder(past_action))
+        if isinstance(goal, str):
+            goal = self.embedding_goal(self.goal_encoder(goal))
+        if isinstance(past_action, str):
+            past_action = self.embedding_past_action(self.action_encoder(past_action))
         others = self.embedding_others(torch.cat(goal, past_action))
         # MODULE 1 : Attention Layer
         for attention_layer in self.attention:
             state = attention_layer(state, others)
         # MODULE 2 : MLP
-        latent_action = self.latent_action(torch.cat(state, others))
-        # MODULE 3 : Action
-        action_type_logits = None
-        typing_type_logits = None
-        bottom_button_type_logits = None
+        # 18维向量
+        # 0表示typing, 1表示导航栏1, 2表示导航栏2, 3表示导航栏3, 4表示touch, 5表示scroll. 均理解为logits.
+        # 剩下的维度单个坐标的mu和sigma, 有 3*2*2 = 12个
+        action_dist = self.action(torch.cat(state, others))
 
-        action_type_logits = self.action_type(latent_action)
-        if determine:
-            action_type = torch.argmax(action_type_logits)
-        else:
-            action_type = torch.multinomial(F.softmax(action_type_logits, num_samples=1))
+    def sample_action(self, action_dist: torch.Tensor) -> torch.Tensor:
+        batch_size = action_dist.size(0)
+
+        type_logits = action_dist[:,:6]
+        type_dist = torch.distributions.Categorical(logits=type_logits)
+        type_one_hot = F.one_hot(type_dist.sample(), num_classes=6).float()
+
+        mus = action_dist[:, 6::2]
+        log_stds = action_dist[:, 7::2]
+        stds = torch.exp(log_stds)
+        coord_dist = torch.distributions.Normal(mus, stds)
+        coords = coord_dist.rsample()
+
+        action = torch.cat((type_one_hot, coords), dim=1)
         
-        typing_type = 0.0
-        bottom_button_type = 0.0
-        touch_coord_x, touch_coord_y = 0.0, 0.0
-        scroll_from_x, scroll_from_y = 0.0, 0.0
-        scroll_to_x, scroll_to_y = 0.0, 0.0
-        
-        if action_type == 0: # typing
-            typing_type_logits = self.typing_type(latent_action)
-            if determine:
-                typing_type = torch.argmax(typing_type_logits)
-            else:
-                typing_type = torch.multinomial(F.softmax(typing_type_logits, num_samples=1))
-        elif action_type == 1: # bottom_button
-            bottom_button_type_logits = self.bottom_button_type(latent_action)
-            if determine:
-                bottom_button_type = torch.argmax(bottom_button_type_logits)
-            else:
-                bottom_button_type = torch.multinomial(F.softmax(bottom_button_type_logits), num_samples=1)
-        elif action_type == 2: # touch
-            touch_coord_x, touch_coord_y = self.touch_coord(latent_action)
-        elif action_type == 3: # scroll
-            scroll_from_x, scroll_from_y = self.scroll_from_coord(latent_action)
-            scroll_to_x, scroll_to_y = self.scroll_to_coord(latent_action)
+        return action
 
-        action = {
-            "action_type": action_type,
-            "typing_type": typing_type,
-            "button_type": bottom_button_type,
-            "touch_point": (touch_coord_x, touch_coord_y),
-            "scroll_from": (scroll_from_x, scroll_from_y),
-            "scroll_to"  : (scroll_to_x, scroll_to_y)
-        }
+    def compute_log_prob(self, action_dist: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        type_logits = action_dist[:, :6]
+        type_dist = torch.distributions.Categorical(logits=type_logits)
+        action_type = action[:,:6].argmax(dim=-1)
+        log_prob_type = type_dist.log_prob(action_type)
 
-        return action, action_type_logits, typing_type_logits, bottom_button_type_logits
+        mus = action_dist[:, 6::2]
+        log_stds = action_dist[:, 7::2]
+        stds = torch.exp(log_stds)
+        action_coords = action[:,6:]
+        coord_dist = torch.distributions.Normal(mus, stds)
+        log_prob_coords = coord_dist.log_prob(action_coords).sum(dim=-1)
+
+        log_prob = log_prob_type + log_prob_coords
+        return log_prob
     
+    def sample_action(self, action_distribution: dict) -> dict:
+        #TODO: sample an action instance from the action distribution
+        
+    def compute_log_prob(self, action:dict, action_distribution:dict) -> torch.Tensor:
+        #TODO: compute the log probability of the action given the action distribution
+        
     def get_typed_text(self, goal:str, step_goal) -> str:
         prompt = f"A phone user wants to acheive the following goal: \"{goal}\". The user needs to enter text in the input box of the user interface at a single step: **{step_goal}**. Provide the text the user should input. Your response should contain only the text the user should enter, without any additional information."
 

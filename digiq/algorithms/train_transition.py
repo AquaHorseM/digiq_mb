@@ -101,6 +101,34 @@ class TransitionModel_Trainer:
         loss = loss_ns + loss_t + loss_r
 
         return {"loss": loss, "next_state loss":loss_ns, "terminal loss": loss_t, "reward loss": loss_r}
+    
+    def value_consistency_loss(self, batch, lambda_ns=1.0, lambda_r=1.0, lambda_t=1.0, lambda_v=0.1):
+        observation, action, reward, next_observation, done, mc_return, state, next_state = batch["observation"], batch["action"], batch["reward"], batch["next_observation"], batch["done"], batch["mc_return"], batch["s_rep"], batch["next_s_rep"]
+
+        past_action, goal = self.parse_obs(observation)
+
+        with torch.no_grad():
+            act_enc  = self.action_encoder(action)
+            goal_enc = self.action_encoder(goal)
+
+        # transition model forward pass
+        next_states_pre, terminal_pre, reward_pre = self.trainsition_model(state, act_enc, goal_enc)
+
+        # Losses
+        loss_ns = F.mse_loss(next_states_pre, next_state)
+        loss_t  = F.binary_cross_entropy(terminal_pre, done.unsqueeze(-1).float())
+        loss_r  = F.mse_loss(reward_pre, reward.unsqueeze(-1).float())
+        # value-consistency loss  (no grad through frozen value_net on real data)
+        with torch.no_grad():
+            v_real = self.value_net(next_state).detach() # target
+        v_pred  = self.value_net(next_states_pre)
+        loss_v  = F.mse_loss(v_pred, v_real)
+        # TODO: play with dif lamda for training
+        loss_total = lambda_ns * loss_ns + lambda_t * loss_t + lambda_r * loss_r + lambda_v * loss_v
+
+        return {"loss": loss_total, "next_state loss": loss_ns, "terminal loss":   loss_t, "reward loss":     loss_r, "value loss":      loss_v}
+
+
 
     def offpolicy_train_loop(self, data_path_general, data_path_web_shop, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
         # step1: load and construct dataset

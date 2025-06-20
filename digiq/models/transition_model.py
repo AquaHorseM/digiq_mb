@@ -91,7 +91,7 @@ class TransformerTransition(nn.Module):
                  state_dim: int,
                  action_dim: int,
                  model_dim: int = 512,
-                 num_layers: int = 4,
+                 num_layers: int = 2,
                  num_heads: int = 4,
                  dropout: float = 0.1,
                  device:str='cuda'):

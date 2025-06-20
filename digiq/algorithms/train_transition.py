@@ -21,12 +21,12 @@ from pathlib import Path
 from tqdm import tqdm
 import wandb
 
-from digiq.models.transition_model import Transition_Model
+from digiq.models.transition_model import MLPTransition, TransformerTransition
 from digiq.models.encoder import ActionEncoder, GoalEncoder
 from digiq.data.utils import ReplayBuffer
 from digiq.data.utils import ReplayBufferDataset
 
-class TransitionModel_Trainer:
+class TransitionModelTrainer:
     def __init__(self, accelerator:Accelerator=None, load_path:str=None, save_path:str=None, epoch:int=None, val_interval:int=None,
                  state_dim:int=None, action_dim:int=None, goal_dim:int=None, embed_dim:int=None, num_attn_layers:int=3, num_heads:int=5, activation:str="ReLU", 
                  action_encoder_backbone:str=None, action_encoder_cache_dir:str=None, goal_encoder_backbone:str=None, goal_encoder_cache_dir:str=None,
@@ -44,8 +44,10 @@ class TransitionModel_Trainer:
         self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=self.device)
         self.goal_encoder = GoalEncoder(backbone=goal_encoder_backbone, cache_dir=goal_encoder_cache_dir, device=self.device)
 
-        self.trainsition_model = Transition_Model(state_dim, action_dim, goal_dim, embed_dim, num_attn_layers, num_heads, activation, self.device)
-        self.optimizer = optim.Adam(self.trainsition_model.parameters())
+        #self.trainsition_model = MLPTransition(state_dim=state_dim, action_dim=action_dim, device=self.device)
+        self.trainsition_model = TransformerTransition(state_dim=state_dim, action_dim=action_dim, device=self.device)
+        
+        self.optimizer = optim.Adam(self.trainsition_model.parameters(), lr=1e-4)
         self.trainsition_model, self.optimizer = self.accelerator.prepare(self.trainsition_model, self.optimizer)
 
         self.load_path = load_path
@@ -55,12 +57,13 @@ class TransitionModel_Trainer:
         self.load(load_path, self.device)
 
     def save(self, path):
-        if self.model_id:
+        if self.model_id is not None:
             name = f"digiq_TransitionModel_M{self.model_id}.pth"
             torch.save(self.trainsition_model.state_dict(), os.path.join(path, name))
         else:
             time=datetime.datetime.now().strftime("%m%d%H%M")
-            torch.save(self.value_model.state_dict(), f"{path}/digiq_TransitionModel_{time}.pth")
+            torch.save(self.trainsition_model.state_dict(), f"{path}/digiq_TransitionModel_{time}.pth")
+            print(f'saved best model in {path}/digiq_TransitionModel_{time}.pth')
 
     def load(self, path: str, device: str):
         if path:
@@ -88,19 +91,11 @@ class TransitionModel_Trainer:
 
     def loss(self, batch):
         observation, action, reward, next_observation, done, mc_return, state, next_state = batch["observation"], batch["action"], batch["reward"], batch["next_observation"], batch["done"], batch["mc_return"], batch["s_rep"], batch["next_s_rep"]
-        #observation, action, reward, next_observation, done, mc_return, state, next_state = batch
-        #observation, action, reward, next_observation, done, mc_return, state, next_state = batch
-        past_action, goal = self.parse_obs(observation)
         with torch.no_grad():
             action = self.action_encoder(action)
-            goal = self.goal_encoder(goal)
-        next_states_pre, terminal_pre, reward_pre = self.trainsition_model.forward(state, action, goal)
-        loss_ns = F.mse_loss(next_states_pre, next_state)
-        loss_t = F.binary_cross_entropy(terminal_pre, reward.unsqueeze(-1).float())
-        loss_r = F.mse_loss(reward_pre, reward.unsqueeze(-1).float())
-        loss = loss_ns + loss_t + loss_r
-
-        return {"loss": loss, "next_state loss":loss_ns, "terminal loss": loss_t, "reward loss": loss_r}
+        next_states_pre = self.trainsition_model.forward(state, action)
+        loss = F.mse_loss(next_states_pre, next_state)
+        return {"loss": loss}
 
     def offpolicy_train_loop(self, data_path_general, data_path_web_shop, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
         # step1: load and construct dataset
@@ -151,7 +146,6 @@ class TransitionModel_Trainer:
                 if self.accelerator.is_main_process and val_info["loss"] < best_loss:
                     best_loss = val_info["loss"]
                     self.save(self.save_path)
-                    print(f'saved best model with loss: {val_info["loss"]}')
 
     def breman_train_loop(self, data_path_general, data_path_web_shop, batch_size=512, capacity=500000, train_ratio=0.8, val_ratio=0.2, bagging=False):
         # step1: load and construct dataset
@@ -160,7 +154,7 @@ class TransitionModel_Trainer:
         
         all_data_general = torch.load(data_path_general, weights_only=False)
         all_data_web_shop = torch.load(data_path_web_shop, weights_only=False)
-        all_data = all_data_general + all_data_web_shop
+        all_data = all_data_general
         if bagging:
             rng = np.random.default_rng(self.seed)
             idx = rng.choice(len(all_data), size=len(all_data), replace=True)
@@ -219,11 +213,12 @@ def TransitionModel_offpolicy_train(config):
 
     wandb.login(key=config.tools.wandb_key)
     wandb.init(project=config.project_name, name=config.run_name, config=dict(config))
-    trainer = TransitionModel_Trainer(
+
+    trainer = TransitionModelTrainer(
         accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
         state_dim=config.TransitionModel.state_dim, goal_dim=config.TransitionModel.goal_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
         action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, goal_encoder_backbone=config.Goal_encoder.goal_encoder_backbone, goal_encoder_cache_dir=config.Goal_encoder.goal_encoder_cache_dir,
-        seed=config.seed
+        seed=config.train.seed
     )
 
     trainer.offpolicy_train_loop(data_path_general=config.data.data_path_general, data_path_web_shop=config.data.data_path_web_shop, batch_size=config.data.batch_size, capacity=config.data.capacity, train_ratio=config.data.train_ratio, val_ratio=config.data.val_ratio)
@@ -244,9 +239,9 @@ def TransitionModel_breman_train(config):
 
         wandb.init(project=config.project_name, name=run_name, config=dict(config))
         
-        trainer = TransitionModel_Trainer(
+        trainer = TransitionModelTrainer(
             accelerator=accelerator, load_path=config.train.load_path, save_path=config.train.save_path, epoch=config.train.epoch, val_interval=config.train.val_interval,
-            state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
+            state_dim=config.TransitionModel.state_dim, action_dim=config.TransitionModel.action_dim, goal_dim=config.TransitionModel.goal_dim, embed_dim=config.TransitionModel.embed_dim, num_attn_layers=config.TransitionModel.num_attn_layers, num_heads=config.TransitionModel.num_heads, activation=config.TransitionModel.activation,
             action_encoder_backbone=config.Action_encoder.action_encoder_backbone, action_encoder_cache_dir=config.Action_encoder.action_encoder_cache_dir, goal_encoder_backbone=config.Goal_encoder.goal_encoder_backbone, goal_encoder_cache_dir=config.Goal_encoder.goal_encoder_cache_dir,
             model_id=k, seed=base_seed + k
         )
@@ -263,8 +258,8 @@ def TransitionModel_breman_train(config):
 
 @hydra.main(config_name="train_transition", config_path="../../scripts/config/main", version_base="1.3")
 def TransitionModel_train(config):
-    # TransitionModel_offpolicy_train(config)
-    TransitionModel_breman_train(config)
+    TransitionModel_offpolicy_train(config)
+    # TransitionModel_breman_train(config)
 
 if __name__ == "__main__":
     TransitionModel_train()

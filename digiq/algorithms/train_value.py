@@ -44,18 +44,19 @@ class ValueModelTrainerSimple:
             goal_encoder_cache_dir=goal_encoder_cache_dir,
             device=self.device,
         )
+        #make sure the dtype is float32
         self.model.init_weight()
-        self.model.to(self.device)
+        self.model = self.model.to(dtype=torch.float32, device=self.device)
 
         # optimizer
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr, dtype=torch.float32)
 
         # where to save
         self.save_path = save_path
         os.makedirs(self.save_path, exist_ok=True)
 
     def compute_loss(self, batch):
-        state = batch["s_rep"].to(self.device)           # [B, ...]
+        state = batch["s_rep"].to(dtype=torch.float32, device=self.device)           # [B, ...]
         observations = batch["observation"]
         if isinstance(observations, str):
             observations = [observations]
@@ -66,13 +67,13 @@ class ValueModelTrainerSimple:
                 goal = goal_match.group(1)
             else:
                 goal = ""
-            goal = self.model.goal_encoder(goal).to(self.device)
+            goal = self.model.goal_encoder(goal).to(dtype=torch.float32, device=self.device)  # [B, goal_dim]
             goals.append(goal)
         goal = torch.stack(goals, dim=0)            # [B, goal_dim]
-        mc = batch["mc_return"].to(self.device)       # [B]
+        mc = batch["mc_return"].to(dtype=torch.float32, device=self.device)      # [B]
 
         # forward; handles goal encoding internally
-        pred = self.model(state, goal).view(-1)          # [B]
+        pred = self.model(state, goal).view(-1).to(dtype=torch.float32, device=self.device)         # [B]
         return F.mse_loss(pred, mc)
 
     def train(
@@ -109,8 +110,9 @@ class ValueModelTrainerSimple:
             n_batches = 0
 
             for batch in loader:
+                # batch.to(dtype=torch.float32, device=self.device)  # ensure batch is float32 and on the correct device
                 self.optimizer.zero_grad()
-                loss = self.compute_loss(batch)
+                loss = self.compute_loss(batch).float()  # compute loss, ensure it's float32
                 loss.backward()
                 self.optimizer.step()
 
@@ -133,9 +135,9 @@ if __name__ == "__main__":
     cfg = {
         "save_path": "/home/qinweima/digiq_mb/digiq/checkpoints/value_model",
         "state_dim": 3584,
-        "goal_dim":  1536,
+        "goal_dim":  768,
         "embed_dim": 2048,
-        "num_attn_layers": 4,
+        "num_attn_layers": 0,
         "num_heads":  8,
         "goal_encoder_backbone": "roberta-base",
         "goal_encoder_cache_dir": None,

@@ -2,11 +2,15 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 from digiq.models.encoder import GoalEncoder, ActionEncoder
+from digiq.models.transition_model import Transition_Model
+from digiq.models.agent import Agent
+from digiq.models.value_model import Value_Model
 
 import argparse
 import random
+import yaml
+import os
 
-# ── 1) Rollout collection with latent-space “TD-reward” ────────────────────────
 def collect_latent_rollout(
     policy, value_fn, trans_model,
     init_states, tasks, rollout_length, gamma, action_encoder, device="cuda"
@@ -15,37 +19,45 @@ def collect_latent_rollout(
     B = init_states.shape[0]
     s = init_states.to(device)
 
-    states, actions, log_probs, rewards, values = [], [], [], [], []
+    states, actions, log_probs, rewards, values, past_actions_str = [], [], [], [], [], []
+    
+    current_past_action_str = [""] * B
 
     with torch.no_grad():
         for _ in range(rollout_length):
-            dist  = policy(s)
-            a     = policy.sample_action(dist)
-            lp    = policy.compute_log_prob(a, dist)
-            a_str = policy.process_action_tensor2str(a)
-            a_encoded = action_encoder(a_str).to(device)  # encode action if needed
-            s_next, done, r  = trans_model(tasks, s, a_encoded)
-            v_next = value_fn(tasks, s_next).squeeze(-1)
+            dist = policy(s, tasks, current_past_action_str)
             
+            a = policy.sample_action(dist)
+            lp = policy.compute_log_prob(dist, a)
+
+            a_str = [policy.process_action_tensor2str(a_i, goal_i) for a_i, goal_i in zip(a, tasks)]
+            a_encoded = action_encoder(a_str).to(device)
+            s_next, done, r = trans_model(s, a_encoded, tasks)
+            v_next = v_next.squeeze(-1)
+
             states.append(s)
             values.append(v_next)
             actions.append(a)
             log_probs.append(lp)
-            rewards.append(r)
+            rewards.append(r.squeeze(-1))
+            past_actions_str.append(current_past_action_str)
             s = s_next
+            current_past_action_str = a_str
 
-        v_final = value_fn(tasks, s).squeeze(-1)
+        v_final, _ = value_fn(s, tasks, current_past_action_str)
+        v_final = v_final.squeeze(-1)
 
     return {
-        "states":    torch.stack(states,    dim=1),
-        "actions":   torch.stack(actions,   dim=1),
+        "states": torch.stack(states, dim=1),
+        "actions": torch.stack(actions, dim=1),
         "log_probs": torch.stack(log_probs, dim=1),
-        "rewards":   torch.stack(rewards,   dim=1),
-        "values":    torch.stack(values,    dim=1),
-        "v_final":   v_final
+        "rewards": torch.stack(rewards, dim=1),
+        "values": torch.stack(values, dim=1),
+        "v_final": v_final,
+        "past_actions": past_actions_str,
+        "tasks": tasks
     }
 
-# ── 2) GAE advantage & return computation ─────────────────────────────────────
 def compute_gae(rewards, values, v_final, gamma, lam):
     B, T = rewards.shape
     adv = torch.zeros_like(rewards)
@@ -60,22 +72,24 @@ def compute_gae(rewards, values, v_final, gamma, lam):
     returns = adv + values
     return adv, returns
 
-# ── 3) bremen-style update ───────────────────────────────────────────────────────
 def bremen_update(
     policy, optimizer, rollouts,
     adv, returns, clip_eps, ent_coef, max_grad_norm
 ):
     B, T = adv.shape
-    # flatten
     old_lp = rollouts["log_probs"].reshape(-1)
-    states  = rollouts["states"].reshape(B*T, -1)
+    states = rollouts["states"].reshape(B*T, -1)
     actions = rollouts["actions"].reshape(B*T, -1)
-    adv_flat = adv.reshape(-1)
-    ret_flat = returns.reshape(-1)
+    
+    tasks_tensor = rollouts["tasks"].unsqueeze(1).expand(-1, T, -1).reshape(B*T, -1)
 
-    dist       = policy(states)
-    new_lp     = dist.log_prob(actions).sum(-1)
-    entropy    = dist.entropy().mean()
+    past_actions_flat = [item for sublist in zip(*rollouts["past_actions"]) for item in sublist]
+
+    adv_flat = adv.reshape(-1)
+
+    dist = policy(states, tasks_tensor, past_actions_flat)
+    new_lp = policy.compute_log_prob(dist, actions)
+    entropy = dist.entropy().mean()
 
     ratio = (new_lp - old_lp).exp()
     surr1 = ratio * adv_flat
@@ -91,108 +105,156 @@ def bremen_update(
 
     return policy_loss.item(), entropy.item()
 
-# ── 4) Main training loop ──────────────────────────────────────────────────────
 def train_model_based_bremen(
-    policy, trans_model,
+    policy, value_fn, trans_model,
     num_iters, batch_size, rollout_length,
     data_file,
     gamma=0.99, lam=0.95,
     clip_eps=0.2,  ent_coef=0.01,
-    bremen_epochs=4, lr=3e-4,
+    bremen_epochs=4, lr=3e-4, max_grad_norm=0.5,
     goal_encoder=None, action_encoder=None,
     device="cuda"
 ):
-    policy.to(device); trans_model.to(device)
+    policy.to(device)
+    value_fn.to(device)
+    trans_model.to(device)
     optimizer = Adam(policy.parameters(), lr=lr)
-
-    # load data
     steps = torch.load(data_file, weights_only=False)
 
     for it in range(1, num_iters+1):
         
-        init_states, tasks = sample_latent_starts(batch_size, steps, goal_encoder)
-        # 1) collect latent rollout
+        init_states, tasks = sample_latent_starts(batch_size, steps, goal_encoder, device)
+
         batch = collect_latent_rollout(
-            policy, trans_model,
-            init_states   = init_states.to(device),
-            tasks         = tasks.to(device),
-            rollout_length= rollout_length,
-            gamma         = gamma,
-            action_encoder= action_encoder,
-            device        = device
+            policy, value_fn, trans_model,
+            init_states=init_states.to(device),
+            tasks=tasks.to(device),
+            rollout_length=rollout_length,
+            gamma=gamma,
+            action_encoder=action_encoder,
+            device=device
         )
 
-        # 2) compute GAE & returns
         adv, returns = compute_gae(
             batch["rewards"], batch["values"], batch["v_final"],
             gamma=gamma, lam=lam
         )
         adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
-        # 3) bremen updates
         for _ in range(bremen_epochs):
             p_loss, ent = bremen_update(
                 policy, optimizer, batch,
                 adv, returns,
                 clip_eps, ent_coef,
-                max_grad_norm=0.5
+                max_grad_norm=max_grad_norm
             )
 
         print(f"[Iter {it:3d}] π_loss={p_loss:.4f} ent={ent:.4f}")
 
     return policy
 
-def sample_latent_starts(B, steps, goal_encoder):
-    """
-    This function should return a batch of initial latent states and encoded tasks
-    """
+def sample_latent_starts(B, steps, goal_encoder, device):
     sampled_steps = random.sample(steps, B)
-    init_states = torch.stack([step['s_rep'] for step in sampled_steps]) # 2d tensor
-    tasks = [goal_encoder(step['task']) for step in sampled_steps] # list of str
-    tasks = torch.stack(tasks, dim=0) 
-    return init_states, tasks
+    init_states = torch.stack([step['s_rep'] for step in sampled_steps])
+    tasks_str = [step['task'] for step in sampled_steps]
+    tasks_encoded = goal_encoder(tasks_str).to(device)
+    return init_states, tasks_encoded
 
 # ──  Example of how to call it ────────────────────────────────────────────────
 if __name__ == "__main__":
-    # define or import your networks...
-    # policy       = MyPolicyNet(STATE_DIM, ACTION_DIM)
-    # policy.value_head = MyValueHead(...)
-    # value_fn     = MyValueNet(STATE_DIM)
-    # trans_model  = MyTransNet(STATE_DIM, ACTION_DIM)
-    # def sample_latent_starts(B): ...
-    #
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_file", type=str, default="", help="Path to offline data")
-    args = parser.parse_args()
+    parser.add_argument("--data_file", type=str, required=True, help="Path to offline data for sampling initial states.")
+    parser.add_argument("--config_path", type=str, default="scripts/config/main/bremen_rl.yaml", help="Path to the main YAML config file.")
+    parser.add_argument("--transition_model_path", type=str, required=True, help="Path to the pretrained transition model weights.")
+    parser.add_argument("--value_model_path", type=str, required=True, help="Path to the pretrained value model weights.")
     
-    #load the config from "scripts/config/main/bremen_rl.yaml" and initialize the goalencoder and action encoder
-    import yaml
-    with open("scripts/config/main/bremen_rl.yaml", 'r') as f:
+    args = parser.parse_args()
+
+    with open(args.config_path, 'r') as f:
         config = yaml.safe_load(f)
-    goal_encoder_config = config['Goal_encoder']
-    action_encoder_config = config['Action_encoder']
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
+    agent_config = config['Agent']
+    value_config = config['Value_Model']
+    trans_config = config['TransitionModel']
+    goal_enc_config = config['Goal_encoder']
+    action_enc_config = config['Action_encoder']
+
     goal_encoder = GoalEncoder(
-        backbone=goal_encoder_config['goal_encoder_backbone'],
-        cache_dir=goal_encoder_config['goal_encoder_cache_dir'],
-        device="cuda"
+        backbone=goal_enc_config['goal_encoder_backbone'],
+        cache_dir=goal_enc_config['goal_encoder_cache_dir'],
+        device=device
     )
     action_encoder = ActionEncoder(
-        backbone=action_encoder_config['action_encoder_backbone'],
-        cache_dir=action_encoder_config['action_encoder_cache_dir'],
-        device="cuda"
+        backbone=action_enc_config['action_encoder_backbone'],
+        cache_dir=action_enc_config['action_encoder_cache_dir'],
+        device=device
     )
 
+    policy = Agent(
+        state_dim=agent_config['state_dim'],
+        goal_dim=agent_config['goal_dim'],
+        action_dim=agent_config['action_dim'],
+        embed_dim=agent_config['embed_dim'],
+        num_sce_type=agent_config['num_sce_type'],
+        latent_action_dim=agent_config['latent_action_dim'],
+        num_attn_layers_first=agent_config['num_attn_layers_first'],
+        num_heads_first=agent_config['num_heads_first'],
+        num_attn_layers_second=agent_config['num_attn_layers_second'],
+        num_heads_second=agent_config['num_heads_second'],
+        goal_encoder_backbone=goal_enc_config['goal_encoder_backbone'],
+        goal_encoder_cache_dir=goal_enc_config['goal_encoder_cache_dir'],
+        action_encoder_backbone=action_enc_config['action_encoder_backbone'],
+        action_encoder_cache_dir=action_enc_config['action_encoder_cache_dir'],
+        typing_lm=agent_config['typing_lm'],
+        device=device
+    )
+
+    value_fn = Value_Model(
+        state_dim=value_config['state_dim'],
+        goal_dim=value_config['goal_dim'],
+        action_dim=value_config['action_dim'],
+        embed_dim=value_config['embed_dim'],
+        num_attn_layers=value_config['num_attn_layers'],
+        num_heads=value_config['num_heads'],
+        goal_encoder_backbone=goal_enc_config['goal_encoder_backbone'],
+        goal_encoder_cache_dir=goal_enc_config['goal_encoder_cache_dir'],
+        action_encoder_backbone=action_enc_config['action_encoder_backbone'],
+        action_encoder_cache_dir=action_enc_config['action_encoder_cache_dir'],
+        device=device
+    )
+
+    trans_model = Transition_Model(
+        state_dim=trans_config['state_dim'],
+        action_dim=trans_config['action_dim'],
+        goal_dim=trans_config['goal_dim'],
+        embed_dim=trans_config['embed_dim'],
+        num_attn_layers=trans_config['num_attn_layers'],
+        num_heads=trans_config['num_heads'],
+        activation=trans_config['activation'],
+        device=device
+    )
+
+    trans_model.load_state_dict(torch.load(args.transition_model_path, map_location=device))
+    value_fn.load_state_dict(torch.load(args.value_model_path, map_location=device))
+
     trained_policy = train_model_based_bremen(
-        policy, trans_model,
-        num_iters      = 1000,
-        batch_size     = 64,
-        rollout_length = 50,
-        data_file = args.data_file
-        gamma=0.99, lam=0.95,
-        clip_eps=0.2, ent_coef=0.01,
-        bremen_epochs=4, lr=3e-4,
+        policy=policy,
+        value_fn=value_fn,
+        trans_model=trans_model,
+        num_iters=config['train']['num_iters'],
+        batch_size=config['train']['batch_size'],
+        rollout_length=config['train']['rollout_length'],
+        data_file=args.data_file,
+        gamma=config['train']['gamma'],
+        lam=config['train']['lam'],
+        clip_eps=config['train']['clip_eps'],
+        ent_coef=config['train']['ent_coef'],
+        bremen_epochs=config['train']['bremen_epochs'],
+        lr=config['train']['lr'],
+        max_grad_norm=config['train']['max_grad_norm'],
         goal_encoder=goal_encoder,
         action_encoder=action_encoder,
-        device="cuda"
+        device=device,
     )

@@ -151,7 +151,7 @@ class AutoUIAgent(torch.nn.Module):
         for key in fill:
             if key == "Action Plan":
                 # extract the value of the action plan
-                pattern = f'{key}: \[(.*?)\]'
+                pattern = r'{key}: \[(.*?)\]'
                 match = re.search(pattern, action)
                 action_dict[key] = match.group(1) if match else None
             else:

@@ -64,7 +64,7 @@ if __name__ == "__main__":
     decoder_path = "/data/mqj/models/vae_512/best_epoch_47.pth"
     data_path = "/data/mqj/datasets/rl/general-ft.pt"
     transition_path = "/data/mqj/models/full_transition/digiq_TransitionModel_tf512-2.pth"
-    output_dir = "vae/test/transition_result"
+    output_dir = "embedding_decoder/test/transition_result"
     sampled_idx = 512
     latent_dim = 3584
     base_channels = 64

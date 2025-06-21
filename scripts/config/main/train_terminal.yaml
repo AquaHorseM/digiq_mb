@@ -1,25 +1,18 @@
-project_name: train_transition
+project_name: train_terminal
 entity_name: DRL_Project_Group
 run_name: ''
 
 train:
   load_path: null
-  save_path: /data/mqj/models/transition
-  epoch: 200
+  save_path: /data/mqj/models/terminal
+  epoch: 200 # more for transformer (~1500), less for MLP (~500)
   val_interval: 10
   print_interval: 1
-  K: 5 # nb of models
   seed: 3047
-  bagging: true # to activate bootst sampling
 
-TransitionModel:
+TerminalModel:
   state_dim: 3584
-  action_dim: 1536
   goal_dim: 768
-  embed_dim: 2048
-  num_attn_layers: 0
-  num_heads: 4
-  activation: ReLU
 
 Action_encoder:
   action_encoder_backbone: roberta-base # deberta-base , electra-base

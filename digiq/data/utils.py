@@ -30,7 +30,7 @@ class ReplayBufferDataset(Dataset):
 
 
 class ReplayBuffer:
-    def __init__(self, batch_size=2, capacity=10000):
+    def __init__(self, for_transition=True, batch_size=2, capacity=10000):
         self.max_size = capacity
         self.size = 0
         self.observations = None
@@ -46,6 +46,7 @@ class ReplayBuffer:
         # self.q_reps_out_list = None
         self.s_rep = None
         self.next_s_rep = None
+        self.for_transition = for_transition
 
     def __len__(self):
         return self.size
@@ -80,7 +81,7 @@ class ReplayBuffer:
                 done=done,
             )
         """
-        if next_s_rep is None:
+        if self.for_transition and next_s_rep is None:
             return
 
         if isinstance(reward, (float, int)):
@@ -103,7 +104,7 @@ class ReplayBuffer:
             self.dones = np.empty((self.max_size, *done.shape), dtype=done.dtype)
             self.mc_returns = np.empty((self.max_size, *mc_return.shape), dtype=mc_return.dtype)
             self.s_rep = np.empty((self.max_size, *s_rep.shape), dtype=s_rep.dtype)
-            self.next_s_rep = np.empty((self.max_size, *next_s_rep.shape), dtype=next_s_rep.dtype)
+            self.next_s_rep = np.empty((self.max_size, *s_rep.shape), dtype=s_rep.dtype)
 
         assert reward.shape == ()
         assert done.shape == ()

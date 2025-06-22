@@ -49,7 +49,7 @@ class ValueModelTrainerSimple:
         self.model = self.model.to(dtype=torch.float32, device=self.device)
 
         # optimizer
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr, dtype=torch.float32)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
         # where to save
         self.save_path = save_path
@@ -133,7 +133,7 @@ class ValueModelTrainerSimple:
 if __name__ == "__main__":
     # 🛠 adjust these to your config or pass via argument parsing
     cfg = {
-        "save_path": "/home/qinweima/digiq_mb/digiq/checkpoints/value_model",
+        "save_path": "/data/mqj/models/value",
         "state_dim": 3584,
         "goal_dim":  768,
         "embed_dim": 2048,
@@ -143,9 +143,9 @@ if __name__ == "__main__":
         "goal_encoder_cache_dir": None,
         "lr": 1e-4,
         "seed": 42,
-        "data_path": "/srv/local/xsm/general-ft.pt",
+        "data_path": "/data/mqj/datasets/rl/general-ft.pt",
         "batch_size": 512,
-        "epochs": 50,
+        "epochs": 20,
     }
 
     trainer = ValueModelTrainerSimple(

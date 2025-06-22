@@ -1,6 +1,7 @@
 import torch
 from transformers import AutoTokenizer
 from digiq.models.critic import VLMDoubleCritic
+from digiq.models.value_model import Value_Model
 from .model import T5ForMultimodalGeneration
 import numpy as np
 from gradio_client import Client, file
@@ -72,6 +73,8 @@ class AutoUIAgent(torch.nn.Module):
         self.critic = VLMDoubleCritic(device, accelerator, critic_lm = critic_lm, cache_dir = cache_dir, in_dim = in_dim, out_dim = out_dim)
         if advantage_estimation == "bellman":
             self.target_critic = VLMDoubleCritic(device, accelerator, critic_lm = critic_lm, cache_dir = cache_dir, in_dim = in_dim, out_dim = out_dim)  
+        self.value = Value_Model(3584, 768, 2048, 0, 8, critic_lm, None, device)
+        self.value.load_state_dict(torch.load("/data/mqj/models/value/value_model_final.pth", map_location=device))
         self.tokenizer = AutoTokenizer.from_pretrained(policy_lm, trust_remote_code=True, cache_dir=cache_dir)
         self.tokenizer.truncation_side = 'left'
         self.tokenizer.pad_token = self.tokenizer.eos_token

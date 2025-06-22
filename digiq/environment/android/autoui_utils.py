@@ -1,7 +1,8 @@
 from enum import Enum
 from dataclasses import dataclass
 from typing import List, Tuple, Union
-from transformers import Blip2VisionModel, AutoProcessor, Blip2Model
+from qwen_vl_utils import process_vision_info
+from transformers import Blip2VisionModel, AutoProcessor, Blip2Model, AutoModelForImageTextToText
 import torch
 from PIL import Image
 
@@ -15,6 +16,47 @@ class ImageFeatureExtractor:
         self.model.language_model = None
         # self.model = self.model.to(self.device)
         self.processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b")
+
+        # Initialize fine-tuned Qwen2.5-vl
+        self.qwen_processor = AutoProcessor.from_pretrained("/data/mqj/models/qwen2.5-vl-7b-finetuned")
+        self.qwen_model = AutoModelForImageTextToText.from_pretrained("/data/mqj/models/qwen2.5-vl-7b-finetuned").to("cuda")
+
+    def get_state_representation(self, image: Image.Image):
+        prompt = "You're given a user interface. List all clickable items' positions. Positions are defined as coordinates in the screen which need to be normalized to 0 to 1, e.g. (0.8, 0.2)."
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": image,
+                    },
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+        text = self.qwen_processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = self.qwen_processor(
+            text=text,
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to("cuda")
+
+        outputs = self.qwen_model(
+            **inputs,
+            return_dict=True,
+            output_hidden_states=True
+        )
+        last_hidden_state = outputs.hidden_states[-1]
+        rep = last_hidden_state[:, -1, :][0]
+        
+        return rep
 
     def to_feat(self, image: Image.Image):
         """Converts a PIL image to a feature representation using the BLIP2 model.
@@ -34,8 +76,10 @@ class ImageFeatureExtractor:
             
             # Detach the tensor from the graph and move it to CPU
             image_features = image_features.detach().cpu()
+
+            s_rep = self.get_state_representation(image)
             
-        return image_features
+        return image_features, s_rep
 
 # class ImageFeatureExtractor:
 #     def __init__(self, device):

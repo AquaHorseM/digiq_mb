@@ -63,6 +63,7 @@ def batch_interact_environment(agent, env, num_trajectories,\
                                     batch_img = [obs["image_feature"] for obs in batch_obs]
                                 else:
                                     batch_img = ["Image feature is not a tensor" for _ in range(bsize)]
+                                batch_srep = [obs["s_rep"] for obs in batch_obs]
                                 if env.feature_extractor is not None:
                                     # colorful_print("autoui has critic, so batch_obs being refractored", "red")
                                     batch_obs = [obs["prompt"] for obs in batch_obs]
@@ -86,9 +87,14 @@ def batch_interact_environment(agent, env, num_trajectories,\
                         # print(f"Environment stpes {str(steps)}")
                         # print("getting actions!")
                         if env.feature_extractor is not None:
-                            action = agent.get_pi_action(batch_obs, torch.cat([i.unsqueeze(0) for i in batch_img], dim = 0), "pi_theta")
+                            action = agent.get_pi_action(
+                                batch_obs, 
+                                torch.cat([i.unsqueeze(0) for i in batch_img], dim = 0), 
+                                torch.cat([i.unsqueeze(0) for i in batch_srep], dim = 0), 
+                                "pi_theta"
+                            )
                         else:
-                            action = agent.get_pi_action(batch_obs, None, "pi_theta")
+                            action = agent.get_pi_action(batch_obs, None, None, "pi_theta")
                         # import IPython; IPython.embed(); exit(1)
                         with timeout(seconds=5*60):
                             batch_return = env.step(decode_f(action))
@@ -100,6 +106,7 @@ def batch_interact_environment(agent, env, num_trajectories,\
                                 continue
                             obs_dict, r, done = result
                             next_img = obs_dict["image_feature"]
+                            next_srep = obs_dict["s_rep"]
                             next_obs = obs_dict["prompt"]
                             if not hasattr(agent, "critic"):
                                 trajectories[i].append({"observation": batch_obs[i], \
@@ -126,6 +133,7 @@ def batch_interact_environment(agent, env, num_trajectories,\
                                 batch_obs[i] = next_obs
                             
                             batch_img[i] = next_img
+                            batch_srep[i] = next_srep
                             batch_done[i] = done
                     accelerate.utils.broadcast(batch_done)
                     # print("waiting for everyone")

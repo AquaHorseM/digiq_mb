@@ -246,11 +246,12 @@ adb -s {self.udid} shell screenrecord --size 540x1140 --bit-rate 4M --time-limit
                 if image.mode == 'RGBA':
                     image = image.convert('RGB')
                 if self.feature_extractor is not None:
-                    image = self.feature_extractor.to_feat(image)
+                    image, s_rep = self.feature_extractor.to_feat(image)
                 # colorful_print(f"history: {self.history}", "green")
                 # colorful_print(f"prompt: {self.prepare_prompt(self.current_task, self.history)}", "yellow")
                 return {"prompt": self.prepare_prompt(self.current_task, self.history),
                         "image_feature": image,
+                        "s_rep": s_rep,
                         "task": self.current_task,
                         "image_path": os.path.join(self.temp_path, f"{self.image_id}_{self.steps}.png"),
                         "video_path": os.path.join(self.temp_path, f"video_{self.record_random_id}.mp4") if self.record else None

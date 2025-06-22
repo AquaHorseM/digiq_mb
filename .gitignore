@@ -1,5 +1,6 @@
 __pycache__/
 __pycache__/**
+**/__pycache__
 wandb
 outputs
 embedding_decoder/test/transition_result

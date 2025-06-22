@@ -81,6 +81,7 @@ class ValueModelTrainerSimple:
         data_path: str,
         batch_size: int = 512,
         epochs: int = 50,
+        eval_every: int = 5,
     ):
         # 1. load data into buffer
         if not os.path.exists(data_path):
@@ -93,8 +94,19 @@ class ValueModelTrainerSimple:
             buffer.insert(**item)
 
         dataset = ReplayBufferDataset(buffer)
-        sampler = RandomSampler(dataset, replacement=True, num_samples=len(dataset))
-        loader  = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=4)
+        # random split into train and validation sets
+        train_size = int(0.9 * len(dataset))
+        val_size = len(dataset) - train_size
+        train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+        # sampler = RandomSampler(dataset, replacement=True, num_samples=len(dataset))
+        # loader  = DataLoader(dataset, batch_size=batch_size, sampler=sampler, num_workers=4)
+        train_sampler = RandomSampler(train_dataset, replacement=True, num_samples=len(train_dataset))
+        train_loader = DataLoader(
+            train_dataset, batch_size=batch_size, sampler=train_sampler, num_workers=4
+        )
+        val_loader = DataLoader(
+            val_dataset, batch_size=batch_size, shuffle=False, num_workers=4
+        )
 
         # 2. optional: wandb init
         wandb.init(project="value-model", config={
@@ -104,12 +116,13 @@ class ValueModelTrainerSimple:
         })
 
         # 3. training loop
+        print(f"Training Value Model for {epochs} epochs...")
         for epoch in range(1, epochs + 1):
             self.model.train()
             running_loss = 0.0
             n_batches = 0
 
-            for batch in loader:
+            for batch in train_loader:
                 # batch.to(dtype=torch.float32, device=self.device)  # ensure batch is float32 and on the correct device
                 self.optimizer.zero_grad()
                 loss = self.compute_loss(batch).float()  # compute loss, ensure it's float32
@@ -122,6 +135,21 @@ class ValueModelTrainerSimple:
             avg_loss = running_loss / n_batches
             print(f"[Epoch {epoch:02d}]  MSE Loss: {avg_loss:.6f}")
             wandb.log({"train/mse": avg_loss, "epoch": epoch})
+            # 3.1. validation
+            if epoch % eval_every == 0:
+                self.model.eval()
+                val_loss = 0.0
+                n_val_batches = 0
+
+                with torch.no_grad():
+                    for val_batch in val_loader:
+                        # val_batch.to(dtype=torch.float32, device=self.device)  # ensure batch is float32 and on the correct device
+                        loss = self.compute_loss(val_batch).float()
+                        val_loss += loss.item()
+                        n_val_batches += 1
+                avg_val_loss = val_loss / n_val_batches
+                print(f"[Epoch {epoch:02d}] Validation MSE Loss: {avg_val_loss:.6f}")
+                wandb.log({"val/mse": avg_val_loss, "epoch": epoch})
 
         # 4. save final weights
         save_file = os.path.join(self.save_path, "value_model_final.pth")
@@ -136,7 +164,7 @@ if __name__ == "__main__":
         "save_path": "/data/mqj/models/value",
         "state_dim": 3584,
         "goal_dim":  768,
-        "embed_dim": 2048,
+        "embed_dim": 1024,
         "num_attn_layers": 0,
         "num_heads":  8,
         "goal_encoder_backbone": "roberta-base",
@@ -146,6 +174,7 @@ if __name__ == "__main__":
         "data_path": "/data/mqj/datasets/rl/general-ft.pt",
         "batch_size": 512,
         "epochs": 20,
+        "eval_every": 5,
     }
 
     trainer = ValueModelTrainerSimple(
@@ -164,4 +193,5 @@ if __name__ == "__main__":
         data_path=cfg["data_path"],
         batch_size=cfg["batch_size"],
         epochs=cfg["epochs"],
+        eval_every=cfg["eval_every"],
     )

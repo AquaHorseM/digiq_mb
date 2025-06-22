@@ -28,14 +28,10 @@ class Value_Model(nn.Module):
 
         self.embedding_state = nn.Sequential(
             nn.Linear(state_dim, embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim),
         ).to(device)
         
         self.embedding_goal = nn.Sequential(
             nn.Linear(goal_dim, embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim),
         ).to(device)
         
         self.attention = nn.ModuleList(
@@ -44,8 +40,6 @@ class Value_Model(nn.Module):
 
         self.critic = nn.Sequential(
             nn.Linear(embed_dim, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
             nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),

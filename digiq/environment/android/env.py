@@ -116,7 +116,7 @@ class AndroidEmulator():
         port_number = udid.split("-")[-1]
         self.udid = udid
         cprint(colored(f"Starting the Emulator", "green"))
-        command = f"""{self.emulator_path} -avd {self.avd_name} "-no-audio" "-skip-adb-auth" "-no-boot-anim" "-gpu" "auto" "-no-snapshot-save" -port {port_number}"""
+        command = f"""{self.emulator_path} -avd {self.avd_name} "-no-audio" "-skip-adb-auth" "-no-boot-anim" "-gpu" "auto" "-no-snapshot-save" -port {port_number} -http-proxy http://127.0.0.1:7890"""
         if no_window:
             command += " -no-window"
         print(f"executing command {command}")
@@ -246,11 +246,12 @@ adb -s {self.udid} shell screenrecord --size 540x1140 --bit-rate 4M --time-limit
                 if image.mode == 'RGBA':
                     image = image.convert('RGB')
                 if self.feature_extractor is not None:
-                    image = self.feature_extractor.to_feat(image)
+                    image, s_rep = self.feature_extractor.to_feat(image)
                 # colorful_print(f"history: {self.history}", "green")
                 # colorful_print(f"prompt: {self.prepare_prompt(self.current_task, self.history)}", "yellow")
                 return {"prompt": self.prepare_prompt(self.current_task, self.history),
                         "image_feature": image,
+                        "s_rep": s_rep,
                         "task": self.current_task,
                         "image_path": os.path.join(self.temp_path, f"{self.image_id}_{self.steps}.png"),
                         "video_path": os.path.join(self.temp_path, f"video_{self.record_random_id}.mp4") if self.record else None

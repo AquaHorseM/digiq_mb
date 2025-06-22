@@ -28,7 +28,7 @@ class GoalEncoder(nn.Module):
     def __init__(self, backbone:str, cache_dir:str, device:str):
         super().__init__()
         self.device = device
-
+        print(f"cache dir: {cache_dir}")
         self.base_lm_task = AutoModel.from_pretrained(backbone, cache_dir=cache_dir).to(device)
         self.base_tokenizer_task = AutoTokenizer.from_pretrained(backbone, cache_dir=cache_dir)
         self.base_tokenizer_task.truncation_side = 'left'

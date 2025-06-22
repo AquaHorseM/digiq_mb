@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from .transition_model import Transition_Model
-from .encoder import GoalEncoder, ActionEncoder
+from .encoder import GoalEncoder
 
 class AttentionBlock(nn.Module):
     def __init__(self, embed_dim:int, num_heads:int):
@@ -19,61 +19,27 @@ class AttentionBlock(nn.Module):
 
 class Value_Model(nn.Module):
     def __init__(
-        self, state_dim:int, goal_dim:int, action_dim, embed_dim:int, num_attn_layers:int, num_heads:int,
-        goal_encoder_backbone:str, goal_encoder_cache_dir:str, action_encoder_backbone:str, action_encoder_cache_dir:str,
+        self, state_dim:int, goal_dim:int, embed_dim:int, num_attn_layers:int, num_heads:int,
+        goal_encoder_backbone:str, goal_encoder_cache_dir:str,
         device:str
     ):
         super().__init__()
-
-        self.action_encoder = ActionEncoder(backbone=action_encoder_backbone, cache_dir=action_encoder_cache_dir, device=device)
         self.goal_encoder = GoalEncoder(backbone=goal_encoder_backbone, cache_dir=goal_encoder_cache_dir, device=device)
 
         self.embedding_state = nn.Sequential(
             nn.Linear(state_dim, embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim),
         ).to(device)
         
         self.embedding_goal = nn.Sequential(
             nn.Linear(goal_dim, embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim),
         ).to(device)
-
-        self.embedding_past_action = nn.Sequential(
-            nn.Linear(action_dim, embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, embed_dim),
-        ).to(device)
-
-        self.embedding_others = nn.Sequential(
-            nn.Linear(embed_dim*2, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim),
-        )
-
+        
         self.attention = nn.ModuleList(
             [AttentionBlock(embed_dim, num_heads) for _ in range(num_attn_layers)]
         ).to(device)
 
-        self.critic1 = nn.Sequential(
+        self.critic = nn.Sequential(
             nn.Linear(embed_dim, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, 1),
-        ).to(device)
-
-        self.critic2 = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim*2),
-            nn.ReLU(),
-            nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
             nn.Linear(embed_dim*2, embed_dim*2),
             nn.ReLU(),
@@ -100,27 +66,18 @@ class Value_Model(nn.Module):
                     noise = torch.randn_like(one_hot) * 0.1
                     m.weight.copy_(one_hot + noise)
 
-    def forward(self, state:torch.Tensor, goal:str|torch.Tensor, past_action:str|torch.Tensor) -> torch.Tensor:
+    def forward(self, state:torch.Tensor, goal:str|torch.Tensor) -> torch.Tensor:
         # MODULE 0 : Embedding
         state = self.embedding_state(state)
         
         if isinstance(goal, str):
             goal = self.embedding_goal(self.goal_encoder(goal))
-        elif isinstance(goal, str):
+        elif isinstance(goal, torch.Tensor):
             goal = self.embedding_goal(goal)
         else:
             raise ValueError("goal shoud either be string or Tensor.")
-        
-        if isinstance(past_action, str):
-            past_action = self.embedding_past_action(self.action_encoder(past_action))
-        elif isinstance(past_action, str):
-            past_action = self.embedding_past_action(past_action)
-        else:
-            raise ValueError("past action shoud either be string ot Tensor.")
-        
-        others = self.embedding_others(torch.cat(goal, past_action))
-        # MODULE 1 : Attention Layer
+                # MODULE 1 : Attention Layer
         for attention_layer in self.attention:
-            state = attention_layer(state, others)
+            state = attention_layer(state, goal)
         # MODULE 2 : MLP
-        return self.critic1(state), self.critic2(state)
+        return self.critic(state)

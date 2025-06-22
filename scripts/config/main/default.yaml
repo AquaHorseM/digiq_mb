@@ -10,15 +10,15 @@ max_steps: 20 # max_steps of AitW General should be 10; of AitW Web Shopping sho
 # ===================
 huggingface_token: ''
 wandb_key: ''
-gemini_key: ''
+gemini_key: 'AIzaSyAWTxjHlHAzDyiBz72Kn321LNwH7OvNvvk'
 
 # ===================
 # ====== algo ======
 # ===================
-policy_lm: '/home/<username>/Auto-UI-Base'
+policy_lm: '/home/mqj/Auto-UI-Base'
 critic_lm: 'roberta-base'
 capacity: 17000 # replay buffer size
-bsize: 8 # number of emulators parallelly on the machine
+bsize: 1 # number of emulators parallelly on the machine
 rollout_size: 16 # how many trajectories to collect between training iterations (should be multiple of bsize)
 warmup_iter: 0 # how many iterations to only collect data and evaluate before training
 trajectory_critic_epochs: 5
@@ -47,11 +47,11 @@ project_name: ''
 # ====== path ======
 # ===================
 # query by: echo $ANDROID_AVD_HOME
-android_avd_home: '/home/<username>/.android/avd'
+android_avd_home: '/data/mqj/avd'
 # query by: which emulator
-emulator_path: '/home/<username>/.android/emulator/emulator'
+emulator_path: '/home/mqj/.android/emulator/emulator'
 # query by: which adb
-adb_path: '/home/<username>/.android/platform-tools/adb'
-cache_dir: '/home/<username>/.cache'
-assets_path: '/home/<username>/digiq/digiq/environment/android/assets/task_set'
-click_icon_path: '/home/<username>/digiq/assets/click.png'
+adb_path: '/home/mqj/.android/platform-tools/adb'
+cache_dir: '/home/mqj/.cache'
+assets_path: '/home/mqj/main_digiq_mb/digiq_mb/digiq/environment/android/assets/task_set'
+click_icon_path: '/home/mqj/main_digiq_mb/digiq_mb/assets/click.png'

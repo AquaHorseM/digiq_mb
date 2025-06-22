@@ -69,7 +69,8 @@ def main(config: "DictConfig"):
                             policy_lm=config.policy_lm, critic_lm=config.critic_lm,
                             cache_dir=config.cache_dir, max_new_tokens=config.max_new_tokens,
                             learn_metric=config.learn_metric, 
-                            advantage_estimation=config.advantage_estimation, api_endpoints=config.api_endpoints,)
+                            advantage_estimation=config.advantage_estimation, api_endpoints=config.api_endpoints,
+                            value_path=config.value_path, transition_path=config.transition_path)
         tokenizer = agent.tokenizer
     elif config.agent_name == "cogagent":
         agent = CogAgent(url=config.cogagent_url)

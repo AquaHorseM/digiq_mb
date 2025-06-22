@@ -33,6 +33,7 @@ def collect_latent_rollout(
             a_str = [policy.process_action_tensor2str(a_i, goal_i) for a_i, goal_i in zip(a, tasks)]
             a_encoded = action_encoder(a_str).to(device)
             s_next, done, r = trans_model(s, a_encoded, tasks)
+            v_next, _ = value_fn(s_next, tasks, a_str) 
             v_next = v_next.squeeze(-1)
 
             states.append(s)
@@ -77,7 +78,7 @@ def bremen_update(
     adv, returns, clip_eps, ent_coef, max_grad_norm
 ):
     B, T = adv.shape
-    old_lp = rollouts["log_probs"].reshape(-1)
+    old_lp = rollouts["log_probs"].reshape(-1).detach()
     states = rollouts["states"].reshape(B*T, -1)
     actions = rollouts["actions"].reshape(B*T, -1)
     
@@ -85,11 +86,11 @@ def bremen_update(
 
     past_actions_flat = [item for sublist in zip(*rollouts["past_actions"]) for item in sublist]
 
-    adv_flat = adv.reshape(-1)
+    adv_flat = adv.reshape(-1).detach()
 
     dist = policy(states, tasks_tensor, past_actions_flat)
     new_lp = policy.compute_log_prob(dist, actions)
-    entropy = dist.entropy().mean()
+    entropy = torch.distributions.Categorical(logits=dist).entropy().mean()
 
     ratio = (new_lp - old_lp).exp()
     surr1 = ratio * adv_flat
@@ -122,14 +123,14 @@ def train_model_based_bremen(
     steps = torch.load(data_file, weights_only=False)
 
     for it in range(1, num_iters+1):
-        
         init_states, tasks = sample_latent_starts(batch_size, steps, goal_encoder, device)
+        tasks = tasks.detach()
 
         batch = collect_latent_rollout(
             policy, value_fn, trans_model,
             init_states=init_states.to(device),
             tasks=tasks.to(device),
-            rollout_length=rollout_length,
+            rollout_length=1,
             gamma=gamma,
             action_encoder=action_encoder,
             device=device
@@ -141,6 +142,7 @@ def train_model_based_bremen(
         )
         adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
+        policy.train()
         for _ in range(bremen_epochs):
             p_loss, ent = bremen_update(
                 policy, optimizer, batch,
@@ -155,7 +157,7 @@ def train_model_based_bremen(
 
 def sample_latent_starts(B, steps, goal_encoder, device):
     sampled_steps = random.sample(steps, B)
-    init_states = torch.stack([step['s_rep'] for step in sampled_steps])
+    init_states = torch.stack([torch.from_numpy(step['s_rep']) for step in sampled_steps])
     tasks_str = [step['task'] for step in sampled_steps]
     tasks_encoded = goal_encoder(tasks_str).to(device)
     return init_states, tasks_encoded
@@ -176,7 +178,6 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     agent_config = config['Agent']
-    value_config = config['Value_Model']
     trans_config = config['TransitionModel']
     goal_enc_config = config['Goal_encoder']
     action_enc_config = config['Action_encoder']
@@ -193,10 +194,10 @@ if __name__ == "__main__":
     )
 
     policy = Agent(
-        state_dim=agent_config['state_dim'],
-        goal_dim=agent_config['goal_dim'],
-        action_dim=agent_config['action_dim'],
-        embed_dim=agent_config['embed_dim'],
+        state_dim=trans_config['state_dim'],
+        action_dim=trans_config['action_dim'],
+        goal_dim=trans_config['goal_dim'],
+        embed_dim=trans_config['embed_dim'],
         num_sce_type=agent_config['num_sce_type'],
         latent_action_dim=agent_config['latent_action_dim'],
         num_attn_layers_first=agent_config['num_attn_layers_first'],
@@ -212,12 +213,12 @@ if __name__ == "__main__":
     )
 
     value_fn = Value_Model(
-        state_dim=value_config['state_dim'],
-        goal_dim=value_config['goal_dim'],
-        action_dim=value_config['action_dim'],
-        embed_dim=value_config['embed_dim'],
-        num_attn_layers=value_config['num_attn_layers'],
-        num_heads=value_config['num_heads'],
+        state_dim=trans_config['state_dim'],
+        action_dim=trans_config['action_dim'],
+        goal_dim=trans_config['goal_dim'],
+        embed_dim=trans_config['embed_dim'],
+        num_attn_layers=trans_config['num_attn_layers'],
+        num_heads=trans_config['num_heads'],
         goal_encoder_backbone=goal_enc_config['goal_encoder_backbone'],
         goal_encoder_cache_dir=goal_enc_config['goal_encoder_cache_dir'],
         action_encoder_backbone=action_enc_config['action_encoder_backbone'],
@@ -236,8 +237,14 @@ if __name__ == "__main__":
         device=device
     )
 
-    trans_model.load_state_dict(torch.load(args.transition_model_path, map_location=device))
-    value_fn.load_state_dict(torch.load(args.value_model_path, map_location=device))
+    trans_state_dict = {}
+    for i in range(5):
+        part = torch.load(f"files/transition/digiq_TransitionModel_M{i}.pth", map_location="cpu")
+        trans_state_dict.update(part)
+    # trans_model.load_state_dict(trans_state_dict)
+
+    trans_model.init_weight()
+    value_fn.init_weight()
 
     trained_policy = train_model_based_bremen(
         policy=policy,

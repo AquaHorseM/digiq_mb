@@ -2,6 +2,8 @@ import torch
 from transformers import AutoTokenizer
 from digiq.models.critic import VLMDoubleCritic
 from digiq.models.value_model import Value_Model
+from digiq.models.encoder import ActionEncoder
+from digiq.models.transition_model import TransformerTransition
 from .model import T5ForMultimodalGeneration
 import numpy as np
 from gradio_client import Client, file
@@ -34,7 +36,8 @@ class AutoUIAgent(torch.nn.Module):
                 cache_dir = '~/.cache', dropout = 0.5, TEMPLATE = None, use_lora=False,
                 do_sample = True, temperature = 1.0, max_new_tokens = 32, use_bfloat16 = False, 
                 eos_str = None, learn_metric="classification", advantage_estimation="bellman", 
-                api_endpoints = []):
+                api_endpoints = [], 
+                transition_path = None, value_path = None):
         super(AutoUIAgent, self).__init__()
         if use_bfloat16:
             self.model = T5ForMultimodalGeneration.from_pretrained(policy_lm, cache_dir=cache_dir,
@@ -73,8 +76,15 @@ class AutoUIAgent(torch.nn.Module):
         self.critic = VLMDoubleCritic(device, accelerator, critic_lm = critic_lm, cache_dir = cache_dir, in_dim = in_dim, out_dim = out_dim)
         if advantage_estimation == "bellman":
             self.target_critic = VLMDoubleCritic(device, accelerator, critic_lm = critic_lm, cache_dir = cache_dir, in_dim = in_dim, out_dim = out_dim)  
-        self.value = Value_Model(3584, 768, 2048, 0, 8, critic_lm, None, device)
-        self.value.load_state_dict(torch.load("/data/mqj/models/value/value_model_final.pth", map_location=device))
+        
+        self.transition = TransformerTransition(
+            state_dim=3584, action_dim=1536, device=device
+        )
+        self.transition.load_state_dict(torch.load(transition_path, map_location=device))
+        self.action_encoder = ActionEncoder(backbone='roberta-base', cache_dir=None, device=device)
+        self.value = Value_Model(3584, 768, 1024, 0, 8, critic_lm, None, device)
+        self.value.load_state_dict(torch.load(value_path, map_location=device))
+
         self.tokenizer = AutoTokenizer.from_pretrained(policy_lm, trust_remote_code=True, cache_dir=cache_dir)
         self.tokenizer.truncation_side = 'left'
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -118,7 +128,33 @@ class AutoUIAgent(torch.nn.Module):
             return original_action
         return pi_b_action
 
-    def get_pi_action(self, observation, image_features, pi_version="pi_b"):
+    def select(self, goals, s_reps, actions, sample_per_input):
+        ret_actions = []
+        print(f"len actions: {len(actions)}, sample_per_input: {sample_per_input}")
+        for i in range(len(actions) // sample_per_input):
+            batch_action = self.action_encoder(actions[i*sample_per_input:(i+1)*sample_per_input])
+            self.transition.eval()
+            with torch.no_grad():
+                pred_next_state = self.transition.forward(torch.stack([s_reps[i]] * sample_per_input, dim=0), batch_action)
+            values = self.value(pred_next_state, goals)
+            selected = values.argmax()
+            print(f"selected id: {selected}, action: {actions[i*sample_per_input + selected]}")
+            ret_actions.append(actions[i*sample_per_input + selected])
+        return ret_actions
+
+    def get_goal(observation):
+        if isinstance(observation, str):
+            observation = [observation]
+        goals = []
+        for obs in observation:
+            goal_match  = re.search(r'Goal: (.*?)</s>', obs)
+            if goal_match:
+                goal = goal_match.group(1)
+            else:
+                goal = ""
+        return torch.stack(goals, dim=0)            # [B, goal_dim]
+
+    def get_pi_action(self, observation, image_features, s_reps, pi_version="pi_b"):
         if pi_version == "pi_b":
             policy = self.init_model
         elif pi_version == "pi_theta":
@@ -133,13 +169,15 @@ class AutoUIAgent(torch.nn.Module):
                         obs_ids = self.tokenizer(observation, return_tensors='pt', padding=True, max_length=512, truncation = True).to(self.device)
                         image_features = image_features.to(self.device)
                         outputs = policy.generate(**obs_ids, image_ids = image_features,
-                                                    max_new_tokens=self.max_new_tokens, do_sample=self.do_sample, temperature = self.temperature,
+                                                    max_new_tokens=self.max_new_tokens, 
+                                                    do_sample=self.do_sample, temperature = self.temperature, num_return_sequences=5,
                                                     pad_token_id = self.tokenizer.eos_token_id).cpu()
                     break
             except TimeoutError:
                 print("Timeout while accessing actions")
                 continue
         raw_action = self.tokenizer.batch_decode(outputs, skip_special_tokens  = True)
+        self.select(self.get_goal(observation), s_reps, raw_action, 5)
         for _ in range(3):
             raw_action = [a[1:] if a.startswith('\n') else a for a in raw_action]
         if self.eos_str is not None:

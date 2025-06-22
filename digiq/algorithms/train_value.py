@@ -12,6 +12,9 @@ import wandb
 from digiq.models.value_model import Value_Model
 from digiq.data.utils import ReplayBuffer, ReplayBufferDataset
 
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 class ValueModelTrainerSimple:
     def __init__(
         self,
@@ -117,6 +120,7 @@ class ValueModelTrainerSimple:
 
         # 3. training loop
         print(f"Training Value Model for {epochs} epochs...")
+        best_loss = float("inf")
         for epoch in range(1, epochs + 1):
             self.model.train()
             running_loss = 0.0
@@ -151,6 +155,13 @@ class ValueModelTrainerSimple:
                 print(f"[Epoch {epoch:02d}] Validation MSE Loss: {avg_val_loss:.6f}")
                 wandb.log({"val/mse": avg_val_loss, "epoch": epoch})
 
+                if avg_val_loss < best_loss:
+                    # 3.2 save best model
+                    best_loss = avg_val_loss
+                    save_file = os.path.join(self.save_path, "value_model_best.pth")
+                    torch.save(self.model.state_dict(), save_file)
+                    print(f"Saved best model to {save_file}")
+
         # 4. save final weights
         save_file = os.path.join(self.save_path, "value_model_final.pth")
         torch.save(self.model.state_dict(), save_file)
@@ -161,7 +172,7 @@ class ValueModelTrainerSimple:
 if __name__ == "__main__":
     # 🛠 adjust these to your config or pass via argument parsing
     cfg = {
-        "save_path": "/data/mqj/models/value",
+        "save_path": "/data/mqj/models/value-ws",
         "state_dim": 3584,
         "goal_dim":  768,
         "embed_dim": 1024,
@@ -171,9 +182,9 @@ if __name__ == "__main__":
         "goal_encoder_cache_dir": None,
         "lr": 1e-4,
         "seed": 42,
-        "data_path": "/data/mqj/datasets/rl/general-ft.pt",
+        "data_path": "/data/mqj/datasets/rl/webshop-ft.pt",
         "batch_size": 512,
-        "epochs": 20,
+        "epochs": 30,
         "eval_every": 5,
     }
 

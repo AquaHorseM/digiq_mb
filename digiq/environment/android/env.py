@@ -116,7 +116,7 @@ class AndroidEmulator():
         port_number = udid.split("-")[-1]
         self.udid = udid
         cprint(colored(f"Starting the Emulator", "green"))
-        command = f"""{self.emulator_path} -avd {self.avd_name} "-no-audio" "-skip-adb-auth" "-no-boot-anim" "-gpu" "auto" "-no-snapshot-save" -port {port_number}"""
+        command = f"""{self.emulator_path} -avd {self.avd_name} "-no-audio" "-skip-adb-auth" "-no-boot-anim" "-gpu" "auto" "-no-snapshot-save" -port {port_number} -http-proxy http://127.0.0.1:7890"""
         if no_window:
             command += " -no-window"
         print(f"executing command {command}")

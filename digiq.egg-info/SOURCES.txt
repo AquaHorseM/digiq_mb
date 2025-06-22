@@ -13,6 +13,7 @@ digiq/algorithms/init_policy.py
 digiq/algorithms/offpolicy_train_loop.py
 digiq/algorithms/parallel_utils.py
 digiq/algorithms/train_policy_bremen.py
+digiq/algorithms/train_policy_onestep.py
 digiq/algorithms/train_transition.py
 digiq/algorithms/train_value.py
 digiq/algorithms/training_pipeline.py

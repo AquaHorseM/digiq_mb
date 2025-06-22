@@ -129,8 +129,8 @@ class AutoUIAgent(torch.nn.Module):
         return pi_b_action
 
     def select(self, goals, s_reps, actions, sample_per_input):
+        s_reps = s_reps.to(self.device)
         ret_actions = []
-        print(f"len actions: {len(actions)}, sample_per_input: {sample_per_input}")
         for i in range(len(actions) // sample_per_input):
             batch_action = self.action_encoder(actions[i*sample_per_input:(i+1)*sample_per_input])
             self.transition.eval()
@@ -138,7 +138,6 @@ class AutoUIAgent(torch.nn.Module):
                 pred_next_state = self.transition.forward(torch.stack([s_reps[i]] * sample_per_input, dim=0), batch_action)
             values = self.value(pred_next_state, goals)
             selected = values.argmax()
-            print(f"selected id: {selected}, action: {actions[i*sample_per_input + selected]}")
             ret_actions.append(actions[i*sample_per_input + selected])
         return ret_actions
 
@@ -152,8 +151,10 @@ class AutoUIAgent(torch.nn.Module):
                 goal = goal_match.group(1)
             else:
                 goal = ""
+            goal = self.value.goal_encoder(goal).to(dtype=torch.float32, device=self.device)  # [B, goal_dim]
             goals.append(goal)
-        return torch.stack(goals, dim=0)            # [B, goal_dim]
+        goals = torch.stack(goals, dim=0)            # [B, goal_dim]
+        return goals
 
     def get_pi_action(self, observation, image_features, s_reps, pi_version="pi_b"):
         if pi_version == "pi_b":

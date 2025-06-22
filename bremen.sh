@@ -1,0 +1,1 @@
+python -m digiq.algorithms.train_policy_bremen --data_file files/data/general.pt --transition_model_path files/transition --value_model_path file/value

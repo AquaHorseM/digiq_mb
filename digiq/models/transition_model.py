@@ -124,11 +124,11 @@ class Transition_Model(nn.Module):
             state, action = cross_attention_layer(state, action)
         next_state = self.mlp_next_state(torch.cat([state, action], dim=-1))
         
-        if goal:
+        if goal is not None:
             goal = self.embedding_goal(goal)
             for cross_attention_layer in self.cross_attention_with_goal:
                 state, goal = cross_attention_layer(state, goal)
-            terminal = torch.sigmoid(self.mlp_termial(torch.cat([state, goal], dim=-1)), dim=1)
+            terminal = self.mlp_termial(torch.cat([state, goal], dim=-1))>0
             reward = self.mlp_reward(torch.cat([state, goal], dim=-1))
             return next_state, terminal, reward
         else:

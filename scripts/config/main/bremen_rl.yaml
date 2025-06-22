@@ -7,22 +7,34 @@ train:
   save_path: /data/mqj/datasets/
   epoch: 100
   val_interval: 10
+  num_iters: 100
+  batch_size: 512
+  rollout_length: 32
+  gamma: 0.5
+  lam: 0.5
+  clip_eps: 0.5
+  ent_coef: 0.5
+  bremen_epochs: 32
+  lr: 0.001
+  max_grad_norm: 1
 
 TransitionModel:
   state_dim: 3584
-  goal_dim: 1536
+  goal_dim: 768
   embed_dim: 2048 # or others?
   num_attn_layers: 12
   num_heads: 16
   activation: ReLU
+  action_dim: 1536
 
 Agent:
   num_sce_type: 2 # 0 for Asking questions and 1 for Searching for things
-  latent_action_dim: int # TBD!
-  num_attn_layers_first: int # TBD!
-  num_heads_first: int # TBD!
-  num_attn_layers_second: int # TBD!
-  num_heads_second: int # TBD!
+  latent_action_dim: 1536 # TBD!
+  num_attn_layers_first: 12 # TBD!
+  num_heads_first: 16 # TBD!
+  num_attn_layers_second: 12 # TBD!
+  num_heads_second: 16 # TBD!
+  typing_lm: Qwen/Qwen3-1.7B
 
 Action_encoder:
   action_encoder_backbone: roberta-base # deberta-base , electra-base
@@ -33,11 +45,11 @@ Goal_encoder:
   goal_encoder_cache_dir: null
 
 train_init_policy:
-  trainer_name: str # BC or MCP
-  loss_coef_alpha: float # TBD!
-  loss_coef_beta: float # TBD!
-  trial_times: int # TBD!
-  x_range_min: float # TBD!
-  x_range_max: float # TBD!
-  y_range_min: float # TBD!
-  y_range_max: float # TBD!
+  trainer_name: BC
+  loss_coef_alpha: 1
+  loss_coef_beta: 1
+  trial_times: 10
+  x_range_min: 0
+  x_range_max: 1
+  y_range_min: 0
+  y_range_max: 1

@@ -123,10 +123,10 @@ class Agent(nn.Module):
         self.embedding_others = MLP(input_dim=embed_dim*2, hidden_dims=[embed_dim*2, embed_dim*2], output_dim=embed_dim).to(device)
 
         self.attention = nn.ModuleList([AttentionBlock(embed_dim, num_heads_first) for _ in range(num_attn_layers_first)]).to(device)
-        self.action = nn.Sequential([
-            CrossAttentionMLPModel(input_dim=embed_dim*3, cross_layers=num_attn_layers_second, attn_heads=num_heads_second, mlp_hidden=[embed_dim*3, embed_dim*3], output_dim=latent_action_dim).to(device),
+        self.action = nn.Sequential(
+            CrossAttentionMLPModel(input_dim=embed_dim*2, cross_layers=num_attn_layers_second, attn_heads=num_heads_second, mlp_hidden=[embed_dim*3, embed_dim*3], output_dim=latent_action_dim).to(device),
             MLP(input_dim=latent_action_dim, hidden_dims=[latent_action_dim, latent_action_dim, latent_action_dim, latent_action_dim], output_dim=18).to(device)
-        ])
+        )
 
         # LLM for typing
         self.tokenizer = AutoTokenizer.from_pretrained(typing_lm)
@@ -141,9 +141,13 @@ class Agent(nn.Module):
         state = self.embedding_state(state)
         if isinstance(goal, str):
             goal = self.embedding_goal(self.goal_encoder(goal))
-        if isinstance(past_action, str):
+        else:
+            goal = self.embedding_goal(goal)
+        if isinstance(past_action, list):
             past_action = self.embedding_past_action(self.action_encoder(past_action))
-        others = self.embedding_others(torch.cat(goal, past_action))
+        else:
+            past_action = self.embedding_past_action(past_action)
+        others = self.embedding_others(torch.cat([goal, past_action], dim=1))
         # MODULE 1 : Attention Layer
         for attention_layer in self.attention:
             state = attention_layer(state, others)
@@ -151,7 +155,8 @@ class Agent(nn.Module):
         # 18维向量
         # 0表示typing, 1表示导航栏1, 2表示导航栏2, 3表示导航栏3, 4表示touch, 5表示scroll. 均理解为logits.
         # 剩下的维度单个坐标的mu和sigma, 有 3*2*2 = 12个
-        action_dist = self.action(torch.cat(state, others))
+        action_dist = self.action(torch.cat([state, others], dim=1))
+        return torch.clamp(action_dist, min=-20, max=20)
 
     def sample_action(self, action_dist: torch.Tensor) -> torch.Tensor:
         # 12维向量

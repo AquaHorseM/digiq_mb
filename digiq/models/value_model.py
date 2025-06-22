@@ -106,19 +106,19 @@ class Value_Model(nn.Module):
         
         if isinstance(goal, str):
             goal = self.embedding_goal(self.goal_encoder(goal))
-        elif isinstance(goal, str):
+        elif isinstance(goal, torch.Tensor):
             goal = self.embedding_goal(goal)
         else:
             raise ValueError("goal shoud either be string or Tensor.")
         
-        if isinstance(past_action, str):
+        if [isinstance(past_action, list) and isinstance(past_action[0], str)] or isinstance(past_action, str):
             past_action = self.embedding_past_action(self.action_encoder(past_action))
-        elif isinstance(past_action, str):
+        elif isinstance(past_action, torch.Tensor):
             past_action = self.embedding_past_action(past_action)
         else:
             raise ValueError("past action shoud either be string ot Tensor.")
         
-        others = self.embedding_others(torch.cat(goal, past_action))
+        others = self.embedding_others(torch.cat([goal, past_action], dim=1))
         # MODULE 1 : Attention Layer
         for attention_layer in self.attention:
             state = attention_layer(state, others)

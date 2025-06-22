@@ -18,7 +18,7 @@ gemini_key: ''
 policy_lm: '/home/mqj/Auto-UI-Base'
 critic_lm: 'roberta-base'
 capacity: 17000 # replay buffer size
-bsize: 1 # number of emulators parallelly on the machine
+bsize: 8 # number of emulators parallelly on the machine
 rollout_size: 16 # how many trajectories to collect between training iterations (should be multiple of bsize)
 warmup_iter: 0 # how many iterations to only collect data and evaluate before training
 trajectory_critic_epochs: 5

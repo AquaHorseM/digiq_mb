@@ -2,15 +2,15 @@ defaults:
   - default
   - _self_
 
-save_path: '/home/mqj/aitw-webshop-digiq-agent'
-run_name: 'evaluate-digiq-webshop'
-task_set: "webshop" # "general" or "webshop"
+save_path: '/home/mqj/aitw-general-digiq-agent'
+run_name: 'evaluate-digiq-general'
+task_set: "general" # "general" or "webshop"
 train_algorithm: "digiq" # only "digiq" supported
 task_mode: "eval"
 
 # trained value and transition model
 transition_path: "/data/mqj/models/full_transition/digiq_TransitionModel_tf512-2.pth"
-value_path: "/data/mqj/models/value-ws/value_model_best.pth"
+value_path: "/data/mqj/models/value-gr/value_model_best.pth"
 
 # critic arch (don't change it unless you trained your model with a different spec)
 advantage_estimation: "bellman"
@@ -45,5 +45,5 @@ worker_run_path: "" # where the script dir is on the worker machine
 worker_username: ""
 
 train_iterations: 0
-eval_iterations: 6
-save_freq: 3
+eval_iterations: 1
+save_freq: 1

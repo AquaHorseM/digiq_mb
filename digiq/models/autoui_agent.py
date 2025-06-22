@@ -172,14 +172,14 @@ class AutoUIAgent(torch.nn.Module):
                         image_features = image_features.to(self.device)
                         outputs = policy.generate(**obs_ids, image_ids = image_features,
                                                     max_new_tokens=self.max_new_tokens, 
-                                                    do_sample=self.do_sample, temperature = self.temperature, num_return_sequences=5,
+                                                    do_sample=self.do_sample, temperature = self.temperature, num_return_sequences=2,
                                                     pad_token_id = self.tokenizer.eos_token_id).cpu()
                     break
             except TimeoutError:
                 print("Timeout while accessing actions")
                 continue
         raw_action = self.tokenizer.batch_decode(outputs, skip_special_tokens  = True)
-        self.select(self.get_goal(observation), s_reps, raw_action, 5)
+        raw_action = self.select(self.get_goal(observation), s_reps, raw_action, 2)
         for _ in range(3):
             raw_action = [a[1:] if a.startswith('\n') else a for a in raw_action]
         if self.eos_str is not None:

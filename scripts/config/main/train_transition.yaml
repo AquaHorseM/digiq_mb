@@ -14,9 +14,9 @@ train:
 TransitionModel:
   state_dim: 3584
   action_dim: 1536
-  goal_dim: 2048
+  goal_dim: 1536
   embed_dim: 2048
-  num_attn_layers: 32
+  num_attn_layers: 12
   num_heads: 16
   activation: ReLU
 
@@ -29,8 +29,9 @@ Goal_encoder:
   goal_encoder_cache_dir: null
 
 data:
-  data_path: /content/drive/MyDrive/DRL_project_2/digiq_mb/datasets/general-origin-uitars-transition.pt
-  batch_size: 512
+  data_path_general: /content/drive/MyDrive/DRL_project_2/digiq_mb/new_datasets/general-ft.pt
+  data_path_web_shop: /content/drive/MyDrive/DRL_project_2/digiq_mb/new_datasets/webshop-ft.pt
+  batch_size: 256
   capacity: 500000
   train_ratio: 0.8
   val_ratio: 0.2

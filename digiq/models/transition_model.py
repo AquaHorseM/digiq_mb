@@ -129,7 +129,6 @@ class Transition_Model(nn.Module):
             for cross_attention_layer in self.cross_attention_with_goal:
                 state, goal = cross_attention_layer(state, goal)
             terminal = self.mlp_termial(torch.cat([state, goal], dim=-1))>0
-            reward = self.mlp_reward(torch.cat([state, goal], dim=-1))
             return next_state, terminal, reward
         else:
             return next_state

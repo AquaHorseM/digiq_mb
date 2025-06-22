@@ -142,7 +142,7 @@ class AutoUIAgent(torch.nn.Module):
             ret_actions.append(actions[i*sample_per_input + selected])
         return ret_actions
 
-    def get_goal(observation):
+    def get_goal(self, observation):
         if isinstance(observation, str):
             observation = [observation]
         goals = []
@@ -152,6 +152,7 @@ class AutoUIAgent(torch.nn.Module):
                 goal = goal_match.group(1)
             else:
                 goal = ""
+            goals.append(goal)
         return torch.stack(goals, dim=0)            # [B, goal_dim]
 
     def get_pi_action(self, observation, image_features, s_reps, pi_version="pi_b"):

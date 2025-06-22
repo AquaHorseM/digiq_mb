@@ -10,7 +10,7 @@ max_steps: 20 # max_steps of AitW General should be 10; of AitW Web Shopping sho
 # ===================
 huggingface_token: ''
 wandb_key: ''
-gemini_key: 'AIzaSyAWTxjHlHAzDyiBz72Kn321LNwH7OvNvvk'
+gemini_key: ''
 
 # ===================
 # ====== algo ======

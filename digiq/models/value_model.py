@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from .transition_model import Transition_Model
 from .encoder import GoalEncoder
 
 class AttentionBlock(nn.Module):
